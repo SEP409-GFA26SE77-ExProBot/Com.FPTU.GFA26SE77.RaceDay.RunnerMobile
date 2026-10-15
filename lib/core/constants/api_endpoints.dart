@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiEndpoints {
@@ -5,9 +7,17 @@ class ApiEndpoints {
     try {
       final url = dotenv.env['API_URL'];
       if (url != null && url.isNotEmpty) {
-        return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+        var formatted = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+        if (!kIsWeb && Platform.isAndroid && formatted.contains('localhost')) {
+          formatted = formatted.replaceAll('localhost', '10.0.2.2');
+        }
+        return formatted;
       }
     } catch (_) {}
+
+    if (!kIsWeb && Platform.isAndroid) {
+      return 'http://10.0.2.2:5080';
+    }
     return 'http://localhost:5080';
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/entities/event_entity.dart';
+import '../../../runner/presentation/widgets/runner_widgets.dart';
 
 class BannerCarousel extends StatefulWidget {
   final List<EventEntity> bannerEvents;
@@ -63,17 +64,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
                     fit: StackFit.expand,
                     children: [
                       // Banner Image
-                      Image.network(
-                        ev.bannerImage ??
-                            'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1200&q=80',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: const Color(0xFF0F766E),
-                          child: const Center(
-                            child: Icon(Icons.landscape, size: 60, color: Colors.white54),
-                          ),
-                        ),
-                      ),
+                      RaceImage(ev.bannerImage, height: 220),
 
                       // Gradient overlay
                       Container(
@@ -97,7 +88,9 @@ class _BannerCarouselState extends State<BannerCarousel> {
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFC107).withValues(alpha: 0.9),
+                            color: const Color(
+                              0xFFFFC107,
+                            ).withValues(alpha: 0.9),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -127,10 +120,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
                                 color: Colors.white,
                                 letterSpacing: 0.5,
                                 shadows: [
-                                  Shadow(
-                                    color: Colors.black87,
-                                    blurRadius: 6,
-                                  ),
+                                  Shadow(color: Colors.black87, blurRadius: 6),
                                 ],
                               ),
                             ),
@@ -144,10 +134,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
                                 color: Color(0xFFFFD700),
                                 letterSpacing: 1.2,
                                 shadows: [
-                                  Shadow(
-                                    color: Colors.black,
-                                    blurRadius: 8,
-                                  ),
+                                  Shadow(color: Colors.black, blurRadius: 8),
                                 ],
                               ),
                             ),
@@ -252,7 +239,9 @@ class _BannerCarouselState extends State<BannerCarousel> {
                     height: isActive ? 10 : 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isActive ? const Color(0xFF2563EB) : Colors.white60,
+                      color: isActive
+                          ? const Color(0xFF2563EB)
+                          : Colors.white60,
                     ),
                   );
                 }),

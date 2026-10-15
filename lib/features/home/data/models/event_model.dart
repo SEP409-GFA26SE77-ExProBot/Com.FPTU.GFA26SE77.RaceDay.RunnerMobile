@@ -1,61 +1,36 @@
 import '../../domain/entities/event_entity.dart';
 
-class EventDistanceModel extends EventDistanceEntity {
-  const EventDistanceModel({
-    super.id,
-    required super.name,
-    required super.distanceKm,
-    super.price,
-    super.currency = 'VND',
-    super.capacity,
-  });
-
-  factory EventDistanceModel.fromJson(Map<String, dynamic> json) {
-    return EventDistanceModel(
-      id: json['id']?.toString(),
-      name: json['name'] ?? json['type'] ?? '${json['distanceKm'] ?? ''}km',
-      distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 0.0,
-      price: (json['price'] as num?)?.toDouble(),
-      currency: json['currency'] ?? 'VND',
-      capacity: json['capacity'] as int?,
-    );
-  }
-}
-
 class EventModel extends EventEntity {
   const EventModel({
     required super.id,
     required super.name,
-    super.tagline,
-    super.bannerImage,
     required super.location,
     required super.date,
-    super.startTime,
     required super.status,
-    super.description,
-    super.distances = const [],
+    super.tagline,
+    super.bannerImage,
+    super.endDate,
+    super.registrationOpensAtUtc,
+    super.distanceTypes,
+    super.distanceKms,
   });
-
-  factory EventModel.fromJson(Map<String, dynamic> json) {
-    var rawDistances = json['distances'];
-    List<EventDistanceModel> parsedDistances = [];
-    if (rawDistances is List) {
-      parsedDistances = rawDistances
-          .map((d) => EventDistanceModel.fromJson(d as Map<String, dynamic>))
-          .toList();
-    }
-
-    return EventModel(
-      id: json['id']?.toString() ?? '',
-      name: json['name'] ?? 'Giải chạy RaceDay',
-      tagline: json['tagline'],
-      bannerImage: json['bannerImage'] ?? json['banner'] ?? json['bannerUrl'],
-      location: json['location'] ?? 'Việt Nam',
-      date: json['date']?.toString() ?? '',
-      startTime: json['startTime']?.toString(),
-      status: json['status'] ?? 'registration-open',
-      description: json['description'],
-      distances: parsedDistances,
-    );
-  }
+  factory EventModel.fromJson(Map<String, dynamic> json) => EventModel(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    location: json['location'] as String? ?? '',
+    date: json['date'] as String? ?? '',
+    endDate: json['endDate'] as String?,
+    status: json['status'] as String? ?? 'unknown',
+    tagline: json['tagline'] as String?,
+    bannerImage: json['bannerImage'] as String?,
+    registrationOpensAtUtc: DateTime.tryParse(
+      json['registrationOpensAtUtc']?.toString() ?? '',
+    ),
+    distanceTypes: (json['distanceTypes'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList(),
+    distanceKms: (json['distanceKms'] as List? ?? [])
+        .map((e) => (e as num).toDouble())
+        .toList(),
+  );
 }

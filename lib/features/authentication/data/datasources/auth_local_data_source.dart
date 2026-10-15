@@ -28,6 +28,12 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
 
     try {
       final payload = JwtHelper.decodePayload(token);
+      final expiry = payload['exp'];
+      if (expiry is! num ||
+          DateTime.now().toUtc().millisecondsSinceEpoch >= expiry * 1000) {
+        await clearUserSession();
+        return null;
+      }
       if (!JwtHelper.isRunner(payload)) {
         await clearUserSession();
         return null;
