@@ -1,162 +1,99 @@
 import 'package:flutter/material.dart';
-import '../../../../core/constants/app_colors.dart';
 import '../controller/home_controller.dart';
 
 class FilterCard extends StatefulWidget {
   final HomeController controller;
-
   const FilterCard({super.key, required this.controller});
-
   @override
   State<FilterCard> createState() => _FilterCardState();
 }
 
 class _FilterCardState extends State<FilterCard> {
-  late TextEditingController _textController;
-
+  late final TextEditingController text;
   @override
   void initState() {
     super.initState();
-    _textController = TextEditingController();
+    text = TextEditingController(text: widget.controller.searchQuery);
+  }
+
+  @override
+  void didUpdateWidget(covariant FilterCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (text.text != widget.controller.searchQuery) {
+      text.value = TextEditingValue(
+        text: widget.controller.searchQuery,
+        selection: TextSelection.collapsed(
+          offset: widget.controller.searchQuery.length,
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
-    _textController.dispose();
+    text.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // 1. Text Search Input
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.search_rounded,
-                  color: Color(0xFF1E293B),
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    onChanged: (val) => widget.controller.setSearchQuery(val),
-                    decoration: InputDecoration(
-                      hintText: 'Nhập tên sự kiện',
-                      hintStyle: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
+    final c = widget.controller;
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            TextField(
+              controller: text,
+              onChanged: c.setSearchQuery,
+              decoration: InputDecoration(
+                labelText: 'Tìm tên giải hoặc địa điểm',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: text.text.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () => c.setSearchQuery(''),
+                        icon: const Icon(Icons.clear),
                       ),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-                if (_textController.text.isNotEmpty)
-                  GestureDetector(
-                    onTap: () {
-                      _textController.clear();
-                      widget.controller.setSearchQuery('');
-                    },
-                    child: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
-                  ),
-              ],
-            ),
-          ),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          // 2. Dropdown "- Cự ly -"
-          _buildDropdownRow(
-            value: widget.controller.selectedDistance,
-            options: widget.controller.distanceOptions,
-            onChanged: (val) {
-              if (val != null) widget.controller.setDistance(val);
-            },
-          ),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          // 3. Dropdown "- Địa điểm -"
-          _buildDropdownRow(
-            value: widget.controller.selectedLocation,
-            options: widget.controller.locationOptions,
-            onChanged: (val) {
-              if (val != null) widget.controller.setLocation(val);
-            },
-          ),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          // 4. Dropdown "- Thời gian -"
-          _buildDropdownRow(
-            value: widget.controller.selectedTime,
-            options: widget.controller.timeOptions,
-            onChanged: (val) {
-              if (val != null) widget.controller.setTime(val);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDropdownRow({
-    required String value,
-    required List<String> options,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          icon: const Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: Color(0xFF1E293B),
-            size: 22,
-          ),
-          items: options.map((opt) {
-            final isDefault = opt.startsWith('-');
-            return DropdownMenuItem<String>(
-              value: opt,
-              child: Text(
-                opt,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isDefault ? FontWeight.w400 : FontWeight.w500,
-                  color: isDefault ? AppColors.textSecondary : AppColors.textPrimary,
-                ),
+                border: const OutlineInputBorder(),
               ),
-            );
-          }).toList(),
-          onChanged: onChanged,
+            ),
+            const SizedBox(height: 8),
+            _dropdown(c.selectedDistance, c.distanceOptions, c.setDistance),
+            _dropdown(c.selectedLocation, c.locationOptions, c.setLocation),
+            _dropdown(c.selectedTime, c.timeOptions, c.setTime),
+            _dropdown(c.selectedStatus, c.statusOptions, c.setStatus),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: c.resetFilters,
+                child: const Text('Đặt lại bộ lọc'),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _dropdown(
+    String value,
+    List<String> values,
+    ValueChanged<String> changed,
+  ) => DropdownButton<String>(
+    value: value,
+    isExpanded: true,
+    items: values
+        .map(
+          (s) => DropdownMenuItem(
+            value: s,
+            child: Text(s, overflow: TextOverflow.ellipsis),
+          ),
+        )
+        .toList(),
+    onChanged: (v) {
+      if (v != null) changed(v);
+    },
+  );
 }

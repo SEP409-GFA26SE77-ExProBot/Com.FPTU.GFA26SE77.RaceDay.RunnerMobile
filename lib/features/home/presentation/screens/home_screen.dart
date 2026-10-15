@@ -4,264 +4,173 @@ import '../../../../shared/widgets/brand_logo.dart';
 import '../../../authentication/domain/entities/user_entity.dart';
 import '../../../authentication/presentation/controller/auth_controller.dart';
 import '../../../authentication/presentation/screens/login_screen.dart';
-import '../../domain/entities/event_entity.dart';
+import '../../../runner/data/runner_repository_impl.dart';
+import '../../../runner/domain/runner_repository.dart';
+import '../../../runner/presentation/screens/event_detail_screen.dart';
+import '../../../runner/presentation/screens/registration_list_screen.dart';
+import '../../../runner/presentation/widgets/runner_widgets.dart';
 import '../controller/home_controller.dart';
 import '../widgets/banner_carousel.dart';
 import '../widgets/filter_card.dart';
 import '../widgets/event_card.dart';
-import '../widgets/event_detail_modal.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserEntity user;
-
   const HomeScreen({super.key, required this.user});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _homeController = HomeController();
-  final _authController = AuthController();
-
+  final controller = HomeController();
+  late final RunnerRepository repository;
+  int tab = 0;
   @override
   void initState() {
     super.initState();
-    _homeController.addListener(_onControllerUpdate);
-    _homeController.fetchEvents();
+    repository = RunnerRepositoryImpl(token: widget.user.token);
+    controller.addListener(_changed);
+    controller.fetchEvents();
   }
 
-  void _onControllerUpdate() {
+  void _changed() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _homeController.removeListener(_onControllerUpdate);
-    _homeController.dispose();
-    _authController.dispose();
+    controller.removeListener(_changed);
+    controller.dispose();
     super.dispose();
   }
 
   Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
+    final yes = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Đăng xuất'),
-        content: const Text('Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng không?'),
+      builder: (c) => AlertDialog(
+        title: const Text('Đăng xuất?'),
+        content: const Text('Các đăng ký của bạn được lưu trên hệ thống.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Ở lại'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Đăng xuất', style: TextStyle(color: Colors.white)),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Đăng xuất'),
           ),
         ],
       ),
     );
-
-    if (confirm == true) {
-      await _authController.logout();
-      if (!mounted) return;
+    if (yes != true) return;
+    final auth = AuthController();
+    await auth.logout();
+    auth.dispose();
+    if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
+        (_) => false,
       );
     }
   }
 
-  void _showEventDetail(EventEntity event) {
-    EventDetailModal.show(context, event);
-  }
-
+  void _open(String id) => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EventDetailScreen(
+        eventId: id,
+        user: widget.user,
+        repository: repository,
+      ),
+    ),
+  );
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.surfaceMuted,
-      appBar: AppBar(
-        titleSpacing: 16,
-        title: const BrandLogo(iconSize: 18, fontSize: 17),
-        actions: [
-          // Runner user badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.person_pin_rounded,
-                    color: AppColors.primary, size: 16),
-                const SizedBox(width: 4),
-                Text(
-                  widget.user.fullName ?? widget.user.username,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.surfaceMuted,
+    appBar: AppBar(
+      title: const BrandLogo(iconSize: 18, fontSize: 20),
+      actions: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 120),
+          child: Text(
+            widget.user.fullName ?? widget.user.username,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        IconButton(
+          onPressed: _logout,
+          tooltip: 'Đăng xuất',
+          icon: const Icon(Icons.logout),
+        ),
+      ],
+    ),
+    bottomNavigationBar: NavigationBar(
+      selectedIndex: tab,
+      onDestinationSelected: (i) => setState(() => tab = i),
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.explore_outlined),
+          selectedIcon: Icon(Icons.explore),
+          label: 'Khám phá',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.confirmation_number_outlined),
+          selectedIcon: Icon(Icons.confirmation_number),
+          label: 'Đăng ký của tôi',
+        ),
+      ],
+    ),
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: tab == 1
+            ? RegistrationListScreen(user: widget.user, repository: repository)
+            : controller.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : controller.error != null
+            ? Center(
+                child: RunnerNotice(
+                  controller.error!,
+                  onRetry: controller.fetchEvents,
                 ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: AppColors.textMuted),
-            tooltip: 'Đăng xuất',
-            onPressed: _logout,
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: _homeController.isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-              ),
-            )
-          : RefreshIndicator(
-              color: AppColors.primary,
-              onRefresh: () => _homeController.fetchEvents(),
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              )
+            : RefreshIndicator(
+                onRefresh: controller.fetchEvents,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                   children: [
-                    // 1. TOP BANNER CAROUSEL (Image 2 Top)
                     BannerCarousel(
-                      bannerEvents: _homeController.bannerEvents,
-                      onEventTap: _showEventDetail,
+                      bannerEvents: controller.bannerEvents,
+                      onEventTap: (e) => _open(e.id),
                     ),
-
-                    const SizedBox(height: 14),
-
-                    // 2. FILTER BOX (Image 2 Middle)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: FilterCard(controller: _homeController),
-                    ),
-
+                    const SizedBox(height: 12),
+                    FilterCard(controller: controller),
                     const SizedBox(height: 16),
-
-                    // 3. SPORTS SECTION HEADER & EVENT LIST (Image 2 Bottom)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: _buildSportsSection(),
+                    Text(
+                      'Hiển thị ${controller.filteredEvents.length}/${controller.allEvents.length} giải chạy',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-
-                    const SizedBox(height: 40),
-                  ],
-                ),
-              ),
-            ),
-    );
-  }
-
-  Widget _buildSportsSection() {
-    final filtered = _homeController.filteredEvents;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section Title: "🏃 THỂ THAO"
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.directions_run_rounded,
-                  size: 22,
-                  color: AppColors.textPrimary,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'THỂ THAO',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${filtered.length} giải chạy',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          // Event List
-          if (filtered.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(32.0),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(Icons.search_off_rounded, size: 48, color: Colors.grey.shade400),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Không tìm thấy giải chạy phù hợp',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textMuted,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(height: 12),
+                    if (controller.filteredEvents.isEmpty)
+                      RunnerNotice(
+                        controller.allEvents.isEmpty
+                            ? 'Hiện chưa có giải chạy được công bố.'
+                            : 'Không tìm thấy giải phù hợp.',
+                        onRetry: controller.resetFilters,
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextButton(
-                      onPressed: () => _homeController.resetFilters(),
-                      child: const Text('Đặt lại bộ lọc',
-                          style: TextStyle(color: AppColors.primary)),
+                    ...controller.filteredEvents.map(
+                      (e) => EventCard(event: e, onTap: () => _open(e.id)),
                     ),
                   ],
                 ),
               ),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: filtered.length,
-              separatorBuilder: (context, index) =>
-                  const Divider(height: 1, color: AppColors.border),
-              itemBuilder: (context, index) {
-                final ev = filtered[index];
-                return EventCard(
-                  event: ev,
-                  onTap: () => _showEventDetail(ev),
-                );
-              },
-            ),
-        ],
       ),
-    );
-  }
+    ),
+  );
 }

@@ -16,7 +16,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _controller = AuthController();
-  final _usernameController = TextEditingController(text: 'cuong.le');
+  final _usernameController = TextEditingController(text: 'an.nguyen');
   final _passwordController = TextEditingController(text: 'MatKhau@123');
 
   bool _obscurePassword = true;
@@ -454,9 +454,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         ActionChip(
                           avatar: const Icon(Icons.check_circle, size: 16, color: Colors.green),
-                          label: const Text('cuong.le (VĐV/Runner)'),
+                          label: const Text('an.nguyen (VĐV/Runner)'),
                           backgroundColor: Colors.white,
-                          onPressed: () => _fillAccount('cuong.le', 'MatKhau@123'),
+                          onPressed: () => _fillAccount('an.nguyen', 'MatKhau@123'),
                         ),
                         ActionChip(
                           avatar: const Icon(Icons.block, size: 16, color: Colors.red),
