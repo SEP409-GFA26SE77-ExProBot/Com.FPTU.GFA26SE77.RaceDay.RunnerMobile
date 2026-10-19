@@ -5,28 +5,74 @@ import '../../../../core/domain/event_lifecycle.dart';
 import '../../domain/entities/event_entity.dart';
 import '../../domain/usecases/get_events_usecase.dart';
 import '../../data/repositories/event_repository_impl.dart';
+import '../models/home_filter_selection.dart';
 
 class HomeController extends ChangeNotifier {
+  static const int pageSize = 10;
+
   final GetEventsUseCase _getEventsUseCase;
   final DateTime Function() _clock;
   bool _disposed = false;
   bool _active = true;
   int _generation = 0, _activeRequests = 0;
+  int _currentGenPendingRequests = 0;
   final _pending = Queue<(int, EventEntity)>();
   Timer? _boundaryTimer;
+
   List<EventEntity> _allEvents = [];
   List<EventEntity> get allEvents => _allEvents;
   List<EventEntity> filteredEvents = [];
+
   List<EventEntity> get bannerEvents => filteredEvents.take(3).toList();
+
   String statusFor(EventEntity event) =>
       event.lifecycle.stateAt(_clock()).label;
-  bool isLoading = true;
+
+  // Pagination state
+  int currentPage = 1;
+  int get totalFiltered => filteredEvents.length;
+  int get pageCount =>
+      totalFiltered == 0 ? 0 : (totalFiltered / pageSize).ceil();
+
+  List<EventEntity> get pagedEvents {
+    if (filteredEvents.isEmpty) return const [];
+    final start = (currentPage - 1) * pageSize;
+    if (start >= filteredEvents.length) return const [];
+    final end = (start + pageSize).clamp(0, filteredEvents.length);
+    return filteredEvents.sublist(start, end);
+  }
+
+  // Loading & refresh state
+  bool isInitialLoading = true;
+  bool isRefreshing = false;
+  bool get isLoading => isInitialLoading || isRefreshing;
   String? error;
+  String? refreshError;
+
+  // Verification state of current generation
+  int get pendingLifecycleCount => _currentGenPendingRequests;
+  bool get isResolvingLifecycle => _currentGenPendingRequests > 0;
+  bool get hasLifecycleFailures => _allEvents.any(
+    (e) => e.lifecycle.loadState == LifecycleLoadState.failed,
+  );
+
+  // Search & filter state
   String searchQuery = '';
-  String selectedDistance = 'Tất cả cự ly';
-  String selectedLocation = 'Tất cả địa điểm';
-  String selectedTime = 'Tất cả thời gian';
-  String selectedStatus = 'Tất cả trạng thái';
+  String selectedDistance = HomeFilterSelection.defaultDistance;
+  String selectedLocation = HomeFilterSelection.defaultLocation;
+  String selectedTime = HomeFilterSelection.defaultTime;
+  String selectedStatus = HomeFilterSelection.defaultStatus;
+
+  HomeFilterSelection get filterSelection => HomeFilterSelection(
+    distance: selectedDistance,
+    location: selectedLocation,
+    time: selectedTime,
+    status: selectedStatus,
+  );
+
+  int get activeFilterCount => filterSelection.activeCount;
+  bool get hasActiveFilters => activeFilterCount > 0;
+
   List<String> get distanceOptions => [
     'Tất cả cự ly',
     '5km',
@@ -35,6 +81,7 @@ class HomeController extends ChangeNotifier {
     '42km',
     'Khác',
   ];
+
   List<String> get locationOptions => [
     'Tất cả địa điểm',
     ...(_allEvents
@@ -43,7 +90,11 @@ class HomeController extends ChangeNotifier {
         .toSet()
         .toList()
       ..sort()),
+    if (selectedLocation != 'Tất cả địa điểm' &&
+        !_allEvents.any((e) => e.location == selectedLocation))
+      selectedLocation,
   ];
+
   List<String> get timeOptions => [
     'Tất cả thời gian',
     'Sắp diễn ra',
@@ -55,8 +106,6 @@ class HomeController extends ChangeNotifier {
             .toList()
           ..sort())
         .map((y) => 'Năm $y'),
-    // A detail refresh can move the last race out of the selected year.
-    // Keep that selection valid and show an empty result rather than resetting it.
     if (selectedTime.startsWith('Năm ') &&
         !_allEvents.any(
           (e) =>
@@ -65,6 +114,7 @@ class HomeController extends ChangeNotifier {
         ))
       selectedTime,
   ];
+
   final statusOptions = [
     'Tất cả trạng thái',
     'Đang mở đăng ký',
@@ -72,12 +122,14 @@ class HomeController extends ChangeNotifier {
     'Đã đóng đăng ký',
     'Đã kết thúc',
   ];
+
   HomeController({
     GetEventsUseCase? getEventsUseCase,
     DateTime Function()? clock,
   }) : _getEventsUseCase =
            getEventsUseCase ?? GetEventsUseCase(EventRepositoryImpl()),
        _clock = clock ?? DateTime.now;
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -87,6 +139,7 @@ class HomeController extends ChangeNotifier {
     _disposed = true;
     _generation++;
     _pending.clear();
+    _currentGenPendingRequests = 0;
     _boundaryTimer?.cancel();
     super.dispose();
   }
@@ -108,22 +161,67 @@ class HomeController extends ChangeNotifier {
     _boundaryTimer = Timer(next.difference(now), _applyFilters);
   }
 
+  static int compareEvents(EventEntity a, EventEntity b, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final aStart = DateTime.tryParse(a.date);
+    final bStart = DateTime.tryParse(b.date);
+    final aEnd = DateTime.tryParse(a.endDate ?? a.date);
+    final bEnd = DateTime.tryParse(b.endDate ?? b.date);
+
+    // 3. Ngày không parse được: cuối danh sách
+    if (aStart == null && bStart == null) return a.id.compareTo(b.id);
+    if (aStart == null) return 1;
+    if (bStart == null) return -1;
+
+    final aIsOver = (aEnd != null && aEnd.isBefore(today));
+    final bIsOver = (bEnd != null && bEnd.isBefore(today));
+
+    // Nhóm chưa qua ngày kết thúc trước nhóm đã qua ngày kết thúc
+    if (!aIsOver && bIsOver) return -1;
+    if (aIsOver && !bIsOver) return 1;
+
+    if (!aIsOver && !bIsOver) {
+      // 1. Nhóm chưa qua ngày kết thúc: ngày bắt đầu tăng dần
+      final cmp = aStart.compareTo(bStart);
+      if (cmp != 0) return cmp;
+    } else {
+      // 2. Nhóm đã qua ngày kết thúc: ngày bắt đầu giảm dần
+      final cmp = bStart.compareTo(aStart);
+      if (cmp != 0) return cmp;
+    }
+
+    // 4. Cùng nhóm/cùng ngày: dùng id làm tie-breaker ổn định
+    return a.id.compareTo(b.id);
+  }
+
   Future<void> fetchEvents() async {
     if (_disposed) return;
     final generation = ++_generation;
     _pending.clear();
-    isLoading = true;
-    error = null;
+    _currentGenPendingRequests = 0;
+
+    if (_allEvents.isEmpty) {
+      isInitialLoading = true;
+      isRefreshing = false;
+      error = null;
+    } else {
+      isInitialLoading = false;
+      isRefreshing = true;
+      refreshError = null;
+    }
     _notify();
+
     try {
       final items = await _getEventsUseCase.execute();
       if (_disposed || generation != _generation) return;
       _allEvents = List.of(items);
-      _allEvents.sort((a, b) => a.date.compareTo(b.date));
+      _allEvents.sort((a, b) => compareEvents(a, b, _clock().toLocal()));
+
       if (!locationOptions.contains(selectedLocation)) {
         selectedLocation = locationOptions.first;
       }
       if (!timeOptions.contains(selectedTime)) selectedTime = timeOptions.first;
+
       for (final event in _allEvents) {
         final state = event.lifecycle.stateAt(_clock());
         if (state != EventRegistrationState.ended &&
@@ -131,12 +229,18 @@ class HomeController extends ChangeNotifier {
           _pending.add((generation, event));
         }
       }
+      _currentGenPendingRequests = _pending.length;
     } catch (e) {
       if (_disposed || generation != _generation) return;
-      error = e.toString();
+      if (_allEvents.isEmpty) {
+        error = e.toString();
+      } else {
+        refreshError = e.toString();
+      }
     } finally {
       if (!_disposed && generation == _generation) {
-        isLoading = false;
+        isInitialLoading = false;
+        isRefreshing = false;
         _applyFilters();
         _pumpDetails();
       }
@@ -144,7 +248,6 @@ class HomeController extends ChangeNotifier {
   }
 
   void _pumpDetails() {
-    // Count in-flight requests across refresh generations as well.
     while (!_disposed && _activeRequests < 4 && _pending.isNotEmpty) {
       final (generation, event) = _pending.removeFirst();
       _activeRequests++;
@@ -166,38 +269,74 @@ class HomeController extends ChangeNotifier {
     }
     _activeRequests--;
     if (!_disposed && generation == _generation) {
+      _currentGenPendingRequests = (_currentGenPendingRequests - 1).clamp(
+        0,
+        9999,
+      );
       final index = _allEvents.indexWhere((e) => e.id == event.id);
       if (index >= 0) {
         _allEvents[index] = event.withLifecycle(lifecycle);
-        _allEvents.sort((a, b) => a.date.compareTo(b.date));
+        _allEvents.sort((a, b) => compareEvents(a, b, _clock().toLocal()));
         _applyFilters();
       }
     }
     _pumpDetails();
   }
 
+  void setPage(int page) {
+    if (page < 1 || (pageCount > 0 && page > pageCount)) return;
+    if (currentPage == page) return;
+    currentPage = page;
+    _notify();
+  }
+
   void setSearchQuery(String s) {
+    if (searchQuery == s) return;
     searchQuery = s;
+    currentPage = 1;
     _applyFilters();
   }
 
-  void setDistance(String s) {
-    selectedDistance = s;
+  void applyFilters(HomeFilterSelection selection) {
+    final changed =
+        selectedDistance != selection.distance ||
+        selectedLocation != selection.location ||
+        selectedTime != selection.time ||
+        selectedStatus != selection.status;
+    if (!changed) return;
+    selectedDistance = selection.distance;
+    selectedLocation = selection.location;
+    selectedTime = selection.time;
+    selectedStatus = selection.status;
+    currentPage = 1;
     _applyFilters();
   }
 
-  void setLocation(String s) {
-    selectedLocation = s;
+  void clearFilter(HomeFilterField field) {
+    switch (field) {
+      case HomeFilterField.distance:
+        selectedDistance = distanceOptions.first;
+        break;
+      case HomeFilterField.location:
+        selectedLocation = locationOptions.first;
+        break;
+      case HomeFilterField.time:
+        selectedTime = timeOptions.first;
+        break;
+      case HomeFilterField.status:
+        selectedStatus = statusOptions.first;
+        break;
+    }
+    currentPage = 1;
     _applyFilters();
   }
 
-  void setTime(String s) {
-    selectedTime = s;
-    _applyFilters();
-  }
-
-  void setStatus(String s) {
-    selectedStatus = s;
+  void clearFilters() {
+    selectedDistance = distanceOptions.first;
+    selectedLocation = locationOptions.first;
+    selectedTime = timeOptions.first;
+    selectedStatus = statusOptions.first;
+    currentPage = 1;
     _applyFilters();
   }
 
@@ -207,6 +346,35 @@ class HomeController extends ChangeNotifier {
     selectedLocation = locationOptions.first;
     selectedTime = timeOptions.first;
     selectedStatus = statusOptions.first;
+    currentPage = 1;
+    _applyFilters();
+  }
+
+  void setDistance(String s) {
+    if (selectedDistance == s) return;
+    selectedDistance = s;
+    currentPage = 1;
+    _applyFilters();
+  }
+
+  void setLocation(String s) {
+    if (selectedLocation == s) return;
+    selectedLocation = s;
+    currentPage = 1;
+    _applyFilters();
+  }
+
+  void setTime(String s) {
+    if (selectedTime == s) return;
+    selectedTime = s;
+    currentPage = 1;
+    _applyFilters();
+  }
+
+  void setStatus(String s) {
+    if (selectedStatus == s) return;
+    selectedStatus = s;
+    currentPage = 1;
     _applyFilters();
   }
 
@@ -274,6 +442,14 @@ class HomeController extends ChangeNotifier {
       }
       return true;
     }).toList();
+
+    // Clamp currentPage when filtered items count changes
+    if (pageCount == 0) {
+      currentPage = 1;
+    } else if (currentPage > pageCount) {
+      currentPage = pageCount;
+    }
+
     _notify();
     _scheduleBoundary();
   }

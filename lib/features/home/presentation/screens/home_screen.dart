@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/brand_logo.dart';
@@ -10,9 +11,11 @@ import '../../../runner/presentation/screens/event_detail_screen.dart';
 import '../../../runner/presentation/screens/registration_list_screen.dart';
 import '../../../runner/presentation/widgets/runner_widgets.dart';
 import '../controller/home_controller.dart';
-import '../widgets/banner_carousel.dart';
-import '../widgets/filter_card.dart';
+import '../models/home_filter_selection.dart';
 import '../widgets/event_card.dart';
+import '../widgets/event_filter_sheet.dart';
+import '../widgets/event_pagination_bar.dart';
+import '../widgets/home_search_toolbar.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserEntity user;
@@ -31,7 +34,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final HomeController controller;
   late final RunnerRepository repository;
+  final ScrollController _scrollController = ScrollController();
   int tab = 0;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     controller.removeListener(_changed);
+    _scrollController.dispose();
     controller.dispose();
     super.dispose();
   }
@@ -113,100 +119,298 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await controller.fetchEvents();
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.surfaceMuted,
-    appBar: AppBar(
-      title: const BrandLogo(iconSize: 18, fontSize: 20),
-      actions: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 120),
-          child: Text(
-            widget.user.fullName ?? widget.user.username,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+  Widget _buildFilterChipsBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            if (controller.selectedDistance !=
+                HomeFilterSelection.defaultDistance)
+              _buildFilterChip(
+                label: controller.selectedDistance,
+                onDeleted: () =>
+                    controller.clearFilter(HomeFilterField.distance),
+              ),
+            if (controller.selectedLocation !=
+                HomeFilterSelection.defaultLocation)
+              _buildFilterChip(
+                label: controller.selectedLocation,
+                onDeleted: () =>
+                    controller.clearFilter(HomeFilterField.location),
+              ),
+            if (controller.selectedTime != HomeFilterSelection.defaultTime)
+              _buildFilterChip(
+                label: controller.selectedTime,
+                onDeleted: () => controller.clearFilter(HomeFilterField.time),
+              ),
+            if (controller.selectedStatus != HomeFilterSelection.defaultStatus)
+              _buildFilterChip(
+                label: controller.selectedStatus,
+                onDeleted: () => controller.clearFilter(HomeFilterField.status),
+              ),
+            TextButton(
+              onPressed: controller.clearFilters,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Text('Xóa bộ lọc'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required VoidCallback onDeleted,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Chip(
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        deleteIcon: const Icon(Icons.close, size: 14),
+        onDeleted: onDeleted,
+        visualDensity: VisualDensity.compact,
+        backgroundColor: AppColors.primaryLight,
+        side: const BorderSide(color: AppColors.primary),
+        labelStyle: const TextStyle(
+          color: AppColors.primaryDark,
+          fontWeight: FontWeight.w600,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow() {
+    final total = controller.totalFiltered;
+    final summaryText = total == 0
+        ? '0 giải phù hợp'
+        : '${(controller.currentPage - 1) * HomeController.pageSize + 1}–${min(controller.currentPage * HomeController.pageSize, total)} / $total giải phù hợp';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+      child: Row(
+        children: [
+          Text(
+            summaryText,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
           ),
-        ),
-        IconButton(
-          onPressed: _logout,
-          tooltip: 'Đăng xuất',
-          icon: const Icon(Icons.logout),
-        ),
-      ],
-    ),
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: tab,
-      onDestinationSelected: (i) {
-        setState(() => tab = i);
-        controller.setActive(i == 0);
-        if (i == 0) controller.fetchEvents();
-      },
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.explore_outlined),
-          selectedIcon: Icon(Icons.explore),
-          label: 'Khám phá',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.confirmation_number_outlined),
-          selectedIcon: Icon(Icons.confirmation_number),
-          label: 'Đăng ký của tôi',
-        ),
-      ],
-    ),
-    body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: tab == 1
-            ? RegistrationListScreen(user: widget.user, repository: repository)
-            : controller.isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : controller.error != null
-            ? Center(
-                child: RunnerNotice(
-                  controller.error!,
-                  onRetry: controller.fetchEvents,
+          const Spacer(),
+          if (controller.isResolvingLifecycle &&
+              controller.selectedStatus != HomeFilterSelection.defaultStatus)
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-              )
-            : RefreshIndicator(
-                onRefresh: controller.fetchEvents,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
+                SizedBox(width: 6),
+                Text(
+                  'Đang kiểm tra trạng thái…',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontStyle: FontStyle.italic,
                   ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surfaceMuted,
+      appBar: AppBar(
+        title: const BrandLogo(iconSize: 18, fontSize: 20),
+        actions: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(
+              widget.user.fullName ?? widget.user.username,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            onPressed: _logout,
+            tooltip: 'Đăng xuất',
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: tab,
+        onDestinationSelected: (i) {
+          setState(() => tab = i);
+          controller.setActive(i == 0);
+          if (i == 0) controller.fetchEvents();
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore),
+            label: 'Khám phá',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.confirmation_number_outlined),
+            selectedIcon: Icon(Icons.confirmation_number),
+            label: 'Đăng ký của tôi',
+          ),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: tab == 1
+              ? RegistrationListScreen(
+                  user: widget.user,
+                  repository: repository,
+                )
+              : controller.isInitialLoading
+              ? const Center(child: CircularProgressIndicator())
+              : controller.error != null && controller.allEvents.isEmpty
+              ? Center(
+                  child: RunnerNotice(
+                    controller.error!,
+                    onRetry: controller.fetchEvents,
+                  ),
+                )
+              : Column(
                   children: [
-                    BannerCarousel(
-                      bannerEvents: controller.bannerEvents,
-                      onEventTap: (e) => _open(e.id),
-                    ),
-                    const SizedBox(height: 12),
-                    FilterCard(controller: controller),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Hiển thị ${controller.filteredEvents.length}/${controller.allEvents.length} giải chạy',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    if (controller.filteredEvents.isEmpty)
-                      RunnerNotice(
-                        controller.allEvents.isEmpty
-                            ? 'Hiện chưa có giải chạy được công bố.'
-                            : 'Không tìm thấy giải phù hợp.',
-                        onRetry: controller.resetFilters,
+                    // Refresh warning notice if refresh failed while retaining old data
+                    if (controller.refreshError != null)
+                      Container(
+                        color: AppColors.errorBg,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              size: 16,
+                              color: AppColors.error,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Không thể cập nhật danh sách',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.error,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: controller.fetchEvents,
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: const Text('Thử lại'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ...controller.filteredEvents.map(
-                      (e) => EventCard(
-                        event: e,
-                        statusLabel: controller.statusFor(e),
-                        onTap: () => _open(e.id),
+
+                    // 1. Search Toolbar
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                      child: HomeSearchToolbar(
+                        initialQuery: controller.searchQuery,
+                        onSearchChanged: controller.setSearchQuery,
+                        onSearchCleared: () => controller.setSearchQuery(''),
+                        activeFilterCount: controller.activeFilterCount,
+                        onOpenFilter: () =>
+                            EventFilterSheet.show(context, controller),
                       ),
                     ),
+
+                    // 2. Applied Filter Chips
+                    if (controller.hasActiveFilters) _buildFilterChipsBar(),
+
+                    // 3. Result Summary Row
+                    _buildSummaryRow(),
+
+                    // 4. Expanded Scrollable Event List with RefreshIndicator
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: controller.fetchEvents,
+                        child: controller.filteredEvents.isEmpty
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 60),
+                                    child: RunnerNotice(
+                                      controller.allEvents.isEmpty
+                                          ? 'Hiện chưa có giải chạy được công bố.'
+                                          : 'Không tìm thấy giải phù hợp.',
+                                      onRetry: controller.allEvents.isEmpty
+                                          ? controller.fetchEvents
+                                          : controller.resetFilters,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : ListView.separated(
+                                controller: _scrollController,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+                                itemCount: controller.pagedEvents.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (ctx, i) {
+                                  final ev = controller.pagedEvents[i];
+                                  return EventCard(
+                                    key: ValueKey(ev.id),
+                                    event: ev,
+                                    statusLabel: controller.statusFor(ev),
+                                    onTap: () => _open(ev.id),
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+
+                    // 5. Fixed Pagination Bar
+                    if (controller.pageCount > 1)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+                        child: EventPaginationBar(
+                          currentPage: controller.currentPage,
+                          pageCount: controller.pageCount,
+                          onPageChanged: (page) {
+                            controller.setPage(page);
+                            if (_scrollController.hasClients) {
+                              _scrollController.animateTo(
+                                0,
+                                duration: const Duration(milliseconds: 250),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          },
+                        ),
+                      ),
                   ],
                 ),
-              ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
