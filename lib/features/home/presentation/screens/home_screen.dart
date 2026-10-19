@@ -16,19 +16,29 @@ import '../widgets/event_card.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserEntity user;
-  const HomeScreen({super.key, required this.user});
+  final HomeController? controller;
+  final RunnerRepository? repository;
+  const HomeScreen({
+    super.key,
+    required this.user,
+    this.controller,
+    this.repository,
+  });
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final controller = HomeController();
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  late final HomeController controller;
   late final RunnerRepository repository;
   int tab = 0;
   @override
   void initState() {
     super.initState();
-    repository = RunnerRepositoryImpl(token: widget.user.token);
+    WidgetsBinding.instance.addObserver(this);
+    controller = widget.controller ?? HomeController();
+    repository =
+        widget.repository ?? RunnerRepositoryImpl(token: widget.user.token);
     controller.addListener(_changed);
     controller.fetchEvents();
   }
@@ -39,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     controller.removeListener(_changed);
     controller.dispose();
     super.dispose();
@@ -75,16 +86,33 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _open(String id) => Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => EventDetailScreen(
-        eventId: id,
-        user: widget.user,
-        repository: repository,
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final visible =
+        state == AppLifecycleState.resumed &&
+        tab == 0 &&
+        (ModalRoute.of(context)?.isCurrent ?? false);
+    controller.setActive(visible);
+    if (visible) controller.fetchEvents();
+  }
+
+  Future<void> _open(String id) async {
+    controller.setActive(false);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventDetailScreen(
+          eventId: id,
+          user: widget.user,
+          repository: repository,
+        ),
       ),
-    ),
-  );
+    );
+    if (!mounted) return;
+    controller.setActive(tab == 0);
+    await controller.fetchEvents();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppColors.surfaceMuted,
@@ -108,7 +136,11 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: tab,
-      onDestinationSelected: (i) => setState(() => tab = i),
+      onDestinationSelected: (i) {
+        setState(() => tab = i);
+        controller.setActive(i == 0);
+        if (i == 0) controller.fetchEvents();
+      },
       destinations: const [
         NavigationDestination(
           icon: Icon(Icons.explore_outlined),
@@ -165,7 +197,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         onRetry: controller.resetFilters,
                       ),
                     ...controller.filteredEvents.map(
-                      (e) => EventCard(event: e, onTap: () => _open(e.id)),
+                      (e) => EventCard(
+                        event: e,
+                        statusLabel: controller.statusFor(e),
+                        onTap: () => _open(e.id),
+                      ),
                     ),
                   ],
                 ),

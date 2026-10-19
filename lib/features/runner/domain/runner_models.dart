@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../../core/domain/event_lifecycle.dart';
 
 typedef Json = Map<String, dynamic>;
 
@@ -58,38 +59,19 @@ class RaceDetail {
   });
   bool get acceptsNow => acceptsAt(DateTime.now().toUtc());
 
-  // Availability is derived from the existing detail contract, not a server flag.
-  bool acceptsAt(DateTime now) {
-    final local = now.toLocal();
-    final today = DateTime(local.year, local.month, local.day);
-    final end = DateTime.tryParse(endDate ?? date);
-    return status == 'registration-open' &&
-        (end == null || !end.isBefore(today)) &&
-        (opensAt == null || !now.isBefore(opensAt!)) &&
-        (closesAt == null || now.isBefore(closesAt!)) &&
-        (packageExpiresAt == null || now.isBefore(packageExpiresAt!));
-  }
+  EventLifecycle get lifecycle => EventLifecycle(
+    status: status,
+    date: date,
+    endDate: endDate,
+    opensAt: opensAt,
+    closesAt: closesAt,
+    packageExpiresAt: packageExpiresAt,
+  );
 
-  String get registrationMessage {
-    if (acceptsNow) return 'Đang mở đăng ký';
-    if (status == 'completed') return 'Giải đã kết thúc';
-    if (status == 'cancelled') return 'Giải đã hủy';
-    final now = DateTime.now();
-    final end = DateTime.tryParse(endDate ?? date);
-    if (end != null && end.isBefore(DateTime(now.year, now.month, now.day))) {
-      return 'Giải đã kết thúc';
-    }
-    if (status == 'suspended' ||
-        (packageExpiresAt != null &&
-            !DateTime.now().toUtc().isBefore(packageExpiresAt!))) {
-      return 'Giải tạm ngưng đăng ký';
-    }
-    if (closesAt != null && !DateTime.now().toUtc().isBefore(closesAt!)) {
-      return 'Đã hết hạn đăng ký';
-    }
-    if (status == 'closed') return 'Đã đóng đăng ký';
-    return 'Giải chưa mở đăng ký';
-  }
+  bool acceptsAt(DateTime now) =>
+      lifecycle.stateAt(now) == EventRegistrationState.open;
+
+  String get registrationMessage => lifecycle.stateAt(DateTime.now()).label;
 }
 
 class Registration {

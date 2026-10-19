@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:runner_mobile/core/network/api_client.dart';
+import 'package:runner_mobile/core/domain/event_lifecycle.dart';
 import 'package:runner_mobile/core/errors/app_exceptions.dart';
 import 'package:runner_mobile/features/home/data/datasources/event_remote_data_source.dart';
 import 'package:runner_mobile/features/home/data/models/event_model.dart';
@@ -37,6 +38,11 @@ class EventsFake implements EventRepository {
   EventsFake(this.values);
   @override
   Future<List<EventEntity>> getEvents() async => values;
+  @override
+  Future<EventLifecycle> getLifecycle(String id) async {
+    final e = values.firstWhere((e) => e.id == id);
+    return EventLifecycle(status: e.status, date: e.date, endDate: e.endDate);
+  }
 }
 
 void main() {

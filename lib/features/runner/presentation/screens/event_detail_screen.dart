@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../../core/domain/event_lifecycle.dart';
 import '../../../authentication/domain/entities/user_entity.dart';
 import '../../domain/runner_models.dart';
 import '../../domain/runner_repository.dart';
@@ -10,17 +12,24 @@ class EventDetailScreen extends StatefulWidget {
   final String eventId;
   final UserEntity user;
   final RunnerRepository repository;
+  final DateTime Function()? clock;
   const EventDetailScreen({
     super.key,
     required this.eventId,
     required this.user,
     required this.repository,
+    this.clock,
   });
   @override
   State<EventDetailScreen> createState() => _EventDetailScreenState();
 }
 
-class _EventDetailScreenState extends State<EventDetailScreen> {
+class _EventDetailScreenState extends State<EventDetailScreen>
+    with WidgetsBindingObserver {
+  Timer? _boundaryTimer;
+  int _loadGeneration = 0;
+  bool _active = true;
+  DateTime _now() => widget.clock?.call() ?? DateTime.now();
   RaceDetail? race;
   Registration? existing;
   String? selectedId, error;
@@ -28,10 +37,13 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
+    _boundaryTimer?.cancel();
     setState(() {
       loading = true;
       error = null;
@@ -39,7 +51,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     try {
       final detail = await widget.repository.event(widget.eventId);
       final registrations = await widget.repository.registrations();
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       race = detail;
       existing = registrations
           .where((r) => r.eventId == widget.eventId && r.status != 'cancelled')
@@ -51,14 +63,56 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               ?.id ??
           detail.distances.where((d) => d.hasSlot).firstOrNull?.id;
     } catch (e) {
-      error = e.toString();
+      if (mounted && generation == _loadGeneration) error = e.toString();
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => loading = false);
+        _scheduleBoundary();
+      }
     }
+  }
+
+  void _scheduleBoundary() {
+    _boundaryTimer?.cancel();
+    if (!mounted || !_active || race == null) return;
+    final now = _now();
+    final next = nextLifecycleChange([race!.lifecycle], now);
+    _boundaryTimer = Timer(next.difference(now), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleBoundary();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _active =
+        state == AppLifecycleState.resumed &&
+        (ModalRoute.of(context)?.isCurrent ?? false);
+    if (_active) {
+      _load();
+    } else {
+      _boundaryTimer?.cancel();
+    }
+  }
+
+  @override
+  void dispose() {
+    _loadGeneration++;
+    _boundaryTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _action() async {
     final r = race!;
+    if (existing == null && !r.acceptsAt(_now())) {
+      setState(() {});
+      _scheduleBoundary();
+      return;
+    }
+    _active = false;
+    _boundaryTimer?.cancel();
     if (existing != null && existing!.status != 'pending_payment') {
       await Navigator.push(
         context,
@@ -97,17 +151,21 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         );
       }
     }
-    if (mounted) await _load();
+    if (mounted) {
+      _active = true;
+      await _load();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final r = race;
+    final now = _now();
     final enabled =
         !loading &&
         error == null &&
         r != null &&
-        (existing != null || (r.acceptsNow && selectedId != null));
+        (existing != null || (r.acceptsAt(now) && selectedId != null));
     return Scaffold(
       appBar: AppBar(title: const Text('Chi tiết giải')),
       bottomNavigationBar: SafeArea(
@@ -153,7 +211,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       const SizedBox(height: 10),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: StatusPill(r.registrationMessage),
+                        child: StatusPill(r.lifecycle.stateAt(now).label),
                       ),
                       const SizedBox(height: 16),
                       RunnerPanel(

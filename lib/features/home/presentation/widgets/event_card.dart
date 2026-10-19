@@ -5,7 +5,13 @@ import '../../../runner/presentation/widgets/runner_widgets.dart';
 class EventCard extends StatelessWidget {
   final EventEntity event;
   final VoidCallback onTap;
-  const EventCard({super.key, required this.event, required this.onTap});
+  final String? statusLabel;
+  const EventCard({
+    super.key,
+    required this.event,
+    required this.onTap,
+    this.statusLabel,
+  });
   @override
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.only(bottom: 16),
@@ -21,7 +27,7 @@ class EventCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                StatusPill(event.statusDisplay),
+                StatusPill(statusLabel ?? event.statusDisplay),
                 const SizedBox(height: 10),
                 Text(
                   event.name,

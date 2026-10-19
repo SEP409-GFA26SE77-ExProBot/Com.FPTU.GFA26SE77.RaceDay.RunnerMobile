@@ -11,6 +11,9 @@ class EventModel extends EventEntity {
     super.bannerImage,
     super.endDate,
     super.registrationOpensAtUtc,
+    super.registrationClosesAtUtc,
+    super.packageExpiresAtUtc,
+    super.lifecycleLoadState,
     super.distanceTypes,
     super.distanceKms,
   });
@@ -25,6 +28,12 @@ class EventModel extends EventEntity {
     bannerImage: json['bannerImage'] as String?,
     registrationOpensAtUtc: DateTime.tryParse(
       json['registrationOpensAtUtc']?.toString() ?? '',
+    ),
+    registrationClosesAtUtc: DateTime.tryParse(
+      json['registrationClosesAtUtc']?.toString() ?? '',
+    ),
+    packageExpiresAtUtc: DateTime.tryParse(
+      json['packageExpiresAtUtc']?.toString() ?? '',
     ),
     distanceTypes: (json['distanceTypes'] as List? ?? [])
         .map((e) => e.toString())
