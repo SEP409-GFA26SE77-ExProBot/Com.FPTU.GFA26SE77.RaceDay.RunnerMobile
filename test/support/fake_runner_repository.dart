@@ -10,6 +10,7 @@ class FakeRunnerRepository implements RunnerRepository {
       timeoutAfterPay = false,
       hasPayment = true;
   int mockCalls = 0, checkoutCalls = 0, cancelCalls = 0, mockCancelCalls = 0;
+  int createCalls = 0, resubmitCalls = 0;
   Future<void>? payGate;
   Json? createdBody;
   final profileData = <String, dynamic>{
@@ -93,6 +94,7 @@ class FakeRunnerRepository implements RunnerRepository {
   Future<Registration> registration(String id) async => reg;
   @override
   Future<Registration> createRegistration(String eventId, Json body) async {
+    createCalls++;
     createdBody = body;
     hasRegistration = true;
     status = 'pending_payment';
@@ -101,6 +103,7 @@ class FakeRunnerRepository implements RunnerRepository {
 
   @override
   Future<Registration> resubmit(String id, Json body) async {
+    resubmitCalls++;
     createdBody = body;
     status = 'pending_approval';
     return reg;

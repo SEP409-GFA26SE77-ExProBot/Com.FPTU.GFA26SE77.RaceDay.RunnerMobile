@@ -1,3 +1,11 @@
+/// Shared by date picker and validation, including leap-day boundaries.
+DateTime runnerBirthDateAtAge(DateTime now, int age) {
+  final local = now.toLocal();
+  final year = local.year - age;
+  final maxDay = DateTime(year, local.month + 1, 0).day;
+  return DateTime(year, local.month, local.day > maxDay ? maxDay : local.day);
+}
+
 String? validateRegistrationField(String key, String value, {DateTime? today}) {
   final v = value.trim();
   const required = ['fullName', 'email', 'phone'];
@@ -43,22 +51,14 @@ String? validateRegistrationField(String key, String value, {DateTime? today}) {
   }
   if (key == 'dateOfBirth') {
     final d = DateTime.tryParse(v);
-    final now = today ?? DateTime.now().toUtc();
-    DateTime yearsAgo(int n) {
-      final maxDay = DateTime(now.year - n, now.month + 1, 0).day;
-      return DateTime(
-        now.year - n,
-        now.month,
-        now.day > maxDay ? maxDay : now.day,
-      );
-    }
+    final now = today ?? DateTime.now();
 
     if (d == null ||
         !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(v) ||
         '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}' !=
             v ||
-        d.isBefore(yearsAgo(100)) ||
-        d.isAfter(yearsAgo(5))) {
+        d.isBefore(runnerBirthDateAtAge(now, 100)) ||
+        d.isAfter(runnerBirthDateAtAge(now, 5))) {
       return 'Ngày sinh hợp lệ, tuổi từ 5 đến 100.';
     }
   }

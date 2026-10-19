@@ -8,6 +8,8 @@ import '../../data/registration_draft_store.dart';
 import '../../domain/runner_models.dart';
 import '../../domain/runner_repository.dart';
 import '../../domain/registration_form_rules.dart';
+import '../../domain/registration_form_values.dart';
+import '../../domain/registration_validation.dart';
 import '../widgets/runner_widgets.dart';
 import 'payment_screen.dart';
 
@@ -76,6 +78,9 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
   RaceDistance? get distance =>
       widget.race.distances.where((d) => d.id == distanceId).firstOrNull;
   bool get resubmitting => widget.existing != null;
+  bool get reviewingPending => pending != null && !resubmitting;
+  bool get editingEnabled => !busy && !reviewingPending;
+  bool registrationCheckFailed = false;
 
   @override
   void initState() {
@@ -84,6 +89,11 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
   }
 
   Future<void> _prefill() async {
+    setState(() {
+      loading = true;
+      error = null;
+      registrationCheckFailed = !resubmitting;
+    });
     try {
       final draft = await drafts.read();
       Registration? resume = widget.resumeRegistration;
@@ -95,9 +105,23 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
             )
             .firstOrNull;
       }
+      if (!resubmitting && resume != null) {
+        final saved = await widget.repository.registration(resume.id);
+        if (!mounted) return;
+        registrationCheckFailed = false;
+        if (saved.status == 'cancelled') {
+          await _resetCancelled();
+        } else if (saved.status != 'pending_payment') {
+          await _finish(saved);
+        } else {
+          _restorePending(saved);
+        }
+        if (mounted) setState(() => loading = false);
+        return;
+      }
+      registrationCheckFailed = false;
       final profile =
           widget.existing?.data ??
-          resume?.data ??
           (draft != null
               ? <String, dynamic>{}
               : (await widget.repository.profile()).fields);
@@ -106,8 +130,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
         if (!resubmitting && draft != null) ...draft,
       };
       if (!mounted) return;
-      pending = resume;
-      _fill(data);
+      _fill(data, fromProfile: !resubmitting && draft == null);
       distanceId =
           widget.existing?.distanceId ??
           data['distanceId'] as String? ??
@@ -116,29 +139,24 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
       if (resubmitting) {
         liability = true;
         step = 1;
-      } else if (widget.resumeRegistration != null) {
-        step = 3;
       }
     } catch (e) {
       if (!mounted) return;
-      error = 'Chưa tải được hồ sơ. Bạn có thể tự điền thông tin. $e';
+      error = registrationCheckFailed
+          ? 'Chưa kiểm tra được đơn đăng ký hiện có. Vui lòng thử lại trước khi tiếp tục. $e'
+          : 'Chưa tải được hồ sơ. Bạn có thể tự điền thông tin. $e';
       fields['fullName']!.text = widget.user.fullName ?? '';
       fields['email']!.text = widget.user.email ?? '';
     }
     if (mounted) setState(() => loading = false);
   }
 
-  void _fill(Json data) {
+  void _fill(Json data, {bool fromProfile = false}) {
     for (final key in fields.keys) {
       fields[key]!.text = data[key]?.toString() ?? '';
     }
-    final g = data['gender']?.toString().toLowerCase();
-    gender = switch (g) {
-      '1' || 'male' || 'nam' => 'Male',
-      '2' || 'female' || 'nữ' || 'nu' => 'Female',
-      'other' => 'Other',
-      _ => null,
-    };
+    fields['dateOfBirth']!.text = registrationBirthDate(data['dateOfBirth']);
+    gender = registrationGender(data['gender'], fromProfile: fromProfile);
     blood = bloodOptions.contains(data['bloodType'])
         ? data['bloodType'] as String
         : null;
@@ -148,9 +166,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
     relation = emergencyRelations.contains(data['emergencyRelation'])
         ? data['emergencyRelation'] as String
         : null;
-    medical = (data['medicalCodes'] as List? ?? [])
-        .map((v) => v.toString())
-        .toList();
+    medical = registrationMedicalCodes(data['medicalCodes']);
     certName = data['healthCertFileName'] as String?;
     certUrl = data['healthCertUrl'] as String?;
     liability = data['liabilityAccepted'] == true;
@@ -172,6 +188,22 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
   };
 
   Future<void> _save() => drafts.save(_data());
+
+  void _restorePending(Registration reg) {
+    setState(() {
+      pending = reg;
+      _fill(reg.data);
+      // Creating a saved registration requires acceptance; the read DTO omits it.
+      liability = true;
+      distanceId = reg.distanceId;
+      certBytes = null;
+      step = 1;
+      errors = {};
+      error = null;
+    });
+    if (scroll.hasClients) scroll.jumpTo(0);
+  }
+
   void _changeStep(int next) {
     setState(() {
       step = next;
@@ -214,8 +246,8 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    final first = DateTime(now.year - 100, now.month, now.day);
-    final last = DateTime(now.year - 5, now.month, now.day);
+    final first = runnerBirthDateAtAge(now, 100);
+    final last = runnerBirthDateAtAge(now, 5);
     final saved = DateTime.tryParse(fields['dateOfBirth']!.text);
     final chosen = await showDatePicker(
       context: context,
@@ -283,13 +315,42 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
     Navigator.pop(context, reg);
   }
 
+  Future<void> _resetCancelled() async {
+    await drafts.clear();
+    if (!mounted) return;
+    setState(() {
+      for (final c in fields.values) {
+        c.clear();
+      }
+      distanceId = null;
+      gender = null;
+      blood = null;
+      shirtSize = null;
+      relation = null;
+      medical = [];
+      certName = null;
+      certUrl = null;
+      certBytes = null;
+      pending = null;
+      liability = false;
+      terms = false;
+      uncertain = false;
+      registrationCheckFailed = false;
+    });
+    _changeStep(0);
+  }
+
   Future<void> _pay(Registration reg) async {
+    if (reg.status == 'cancelled') {
+      await _resetCancelled();
+      return;
+    }
     if (reg.status != 'pending_payment') {
       await _finish(reg);
       return;
     }
-    pending = reg;
     if (!mounted) return;
+    _restorePending(reg);
     setState(() => busy = false);
     final outcome = await Navigator.push<PaymentOutcome>(
       context,
@@ -303,40 +364,21 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
     );
     if (!mounted) return;
     if (outcome == PaymentOutcome.cancelled) {
-      await drafts.clear();
-      if (!mounted) return;
-      setState(() {
-        for (final c in fields.values) {
-          c.clear();
-        }
-        distanceId = null;
-        gender = null;
-        blood = null;
-        shirtSize = null;
-        relation = null;
-        medical = [];
-        certName = null;
-        certUrl = null;
-        certBytes = null;
-        pending = null;
-        liability = false;
-        terms = false;
-        uncertain = false;
-      });
-      _changeStep(0);
+      await _resetCancelled();
     } else if (outcome == PaymentOutcome.paid) {
       await _finish(await widget.repository.registration(reg.id));
     } else {
-      pending = await widget.repository.registration(reg.id);
+      final saved = await widget.repository.registration(reg.id);
       if (!mounted) return;
-      if (pending!.status != 'pending_payment') {
-        await _finish(pending!);
+      if (saved.status == 'cancelled') {
+        await _resetCancelled();
         return;
       }
-      setState(() {
-        step = 3;
-        error = null;
-      });
+      if (saved.status != 'pending_payment') {
+        await _finish(saved);
+        return;
+      }
+      _restorePending(saved);
     }
   }
 
@@ -347,7 +389,6 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
       error = null;
     });
     try {
-      await _save();
       await _pay(await widget.repository.registration(pending!.id));
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -357,7 +398,11 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
   }
 
   Future<void> _submit() async {
-    if (busy) return;
+    if (busy || loading || registrationCheckFailed) return;
+    if (reviewingPending) {
+      await _continuePayment();
+      return;
+    }
     for (var i = resubmitting ? 1 : 0; i < (resubmitting ? 3 : 4); i++) {
       if (!_validate(i)) return;
     }
@@ -440,7 +485,8 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
     child: TextFormField(
       key: Key('field-$key'),
       controller: fields[key],
-      enabled: !busy,
+      enabled: editingEnabled,
+      maxLength: key == 'bibName' ? 40 : null,
       readOnly: key == 'dateOfBirth',
       onTap: key == 'dateOfBirth' ? _pickDate : null,
       onChanged: (_) => setState(() => errors.remove(key)),
@@ -455,6 +501,10 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
         labelText: labels[key],
         errorText: errors[key],
         errorMaxLines: 3,
+        helperText: key == 'idNumber'
+            ? 'Nếu chưa đủ tuổi, có thể điền CCCD/CMND của người giám hộ hoặc người liên hệ khẩn cấp (9 hoặc 12 chữ số).'
+            : null,
+        helperMaxLines: 4,
         border: const OutlineInputBorder(),
         suffixIcon: key == 'dateOfBirth'
             ? const Icon(Icons.calendar_month)
@@ -469,24 +519,32 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
     List<String> options,
     ValueChanged<String?> change, {
     Map<String, String>? display,
+    bool allowEmpty = false,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: DropdownButtonFormField<String>(
       key: ValueKey('$key-$value'),
-      initialValue: value,
+      initialValue: allowEmpty ? value ?? '' : value,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
         errorText: errors[key],
         border: const OutlineInputBorder(),
       ),
-      items: options
-          .map((o) => DropdownMenuItem(value: o, child: Text(display?[o] ?? o)))
-          .toList(),
-      onChanged: busy
+      items: [
+        if (allowEmpty)
+          const DropdownMenuItem(
+            value: '',
+            child: Text('Để trống / Chọn size'),
+          ),
+        ...options.map(
+          (o) => DropdownMenuItem(value: o, child: Text(display?[o] ?? o)),
+        ),
+      ],
+      onChanged: !editingEnabled
           ? null
           : (v) => setState(() {
-              change(v);
+              change(v == '' ? null : v);
               errors.remove(key);
             }),
     ),
@@ -508,7 +566,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 key: Key('distance-${d.id}'),
-                onTap: busy || !d.hasSlot
+                onTap: !editingEnabled || !d.hasSlot
                     ? null
                     : () => setState(() {
                         distanceId = d.id;
@@ -599,6 +657,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
                 shirtSize,
                 shirtSizes,
                 (v) => shirtSize = v,
+                allowEmpty: true,
               ),
               _field('bibName'),
             ],
@@ -630,7 +689,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
                   value: medical.contains(entry.key),
                   title: Text(entry.value),
                   controlAffinity: ListTileControlAffinity.leading,
-                  onChanged: busy
+                  onChanged: !editingEnabled
                       ? null
                       : (_) => setState(() {
                           medical = toggleMedical(medical, entry.key);
@@ -651,7 +710,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
               if (certName != null) Text(certName!),
               OutlinedButton.icon(
                 key: const Key('health-file'),
-                onPressed: busy ? null : _chooseFile,
+                onPressed: editingEnabled ? _chooseFile : null,
                 icon: const Icon(Icons.attach_file),
                 label: Text(certName == null ? 'Chọn file' : 'Đổi file'),
               ),
@@ -680,7 +739,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
                 contentPadding: EdgeInsets.zero,
                 value: liability,
                 controlAffinity: ListTileControlAffinity.leading,
-                onChanged: busy
+                onChanged: !editingEnabled
                     ? null
                     : (v) => setState(() {
                         liability = v ?? false;
@@ -737,28 +796,36 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
               title: Text('Quét mã QR ngân hàng (PayOS)'),
             ),
             Text(
-              money(distance?.estimatedPrice, distance?.currency ?? 'VND'),
+              money(
+                reviewingPending ? pending!.price : distance?.estimatedPrice,
+                reviewingPending
+                    ? pending!.currency
+                    : distance?.currency ?? 'VND',
+              ),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
-            const Text(
-              'Giá tham khảo. Sau khi bấm Thanh toán, hệ thống tạo đơn và mở mã QR với số tiền đã chốt.',
+            Text(
+              reviewingPending
+                  ? 'Tiếp tục thanh toán sử dụng thông tin và số tiền đã lưu trong đơn.'
+                  : 'Giá tham khảo. Sau khi bấm Thanh toán, hệ thống tạo đơn và mở mã QR với số tiền đã chốt.',
             ),
-            CheckboxListTile(
-              key: const Key('payment-terms'),
-              contentPadding: EdgeInsets.zero,
-              value: terms,
-              controlAffinity: ListTileControlAffinity.leading,
-              onChanged: busy
-                  ? null
-                  : (v) => setState(() {
-                      terms = v ?? false;
-                      errors.remove('paymentTermsAccepted');
-                    }),
-              title: const Text(
-                'Tôi đã đọc, hiểu và chấp nhận quy định sự kiện cùng điều khoản thanh toán của RaceDay. *',
+            if (!reviewingPending)
+              CheckboxListTile(
+                key: const Key('payment-terms'),
+                contentPadding: EdgeInsets.zero,
+                value: terms,
+                controlAffinity: ListTileControlAffinity.leading,
+                onChanged: !editingEnabled
+                    ? null
+                    : (v) => setState(() {
+                        terms = v ?? false;
+                        errors.remove('paymentTermsAccepted');
+                      }),
+                title: const Text(
+                  'Tôi đã đọc, hiểu và chấp nhận quy định sự kiện cùng điều khoản thanh toán của RaceDay. *',
+                ),
               ),
-            ),
-            _error('paymentTermsAccepted'),
+            if (!reviewingPending) _error('paymentTermsAccepted'),
           ],
         ),
       ],
@@ -786,7 +853,7 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
                         onPressed: busy
                             ? null
                             : () async {
-                                await _save();
+                                if (!reviewingPending) await _save();
                                 if (mounted) _changeStep(step - 1);
                               },
                         child: const Text('Quay lại'),
@@ -795,15 +862,21 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
                     ],
                     Expanded(
                       child: FilledButton(
-                        key: const Key('form-next'),
-                        onPressed: busy
+                        key: Key(
+                          reviewingPending ? 'resume-payment' : 'form-next',
+                        ),
+                        onPressed: busy || registrationCheckFailed
                             ? null
+                            : reviewingPending
+                            ? _continuePayment
                             : step < (resubmitting ? 2 : 3)
                             ? _next
                             : _submit,
                         child: Text(
                           busy
                               ? 'Đang xử lý…'
+                              : reviewingPending
+                              ? 'Tiếp tục thanh toán'
                               : step < (resubmitting ? 2 : 3)
                               ? 'Tiếp tục'
                               : resubmitting
@@ -865,19 +938,25 @@ class _RegistrationFormScreenState extends State<RegistrationFormScreen> {
                       ),
                     const SizedBox(height: 16),
                     if (busy) const LinearProgressIndicator(),
-                    if (error != null) RunnerNotice(error!),
+                    if (error != null)
+                      RunnerNotice(
+                        error!,
+                        onRetry: registrationCheckFailed ? _prefill : null,
+                      ),
                     if (pending != null && !resubmitting)
                       RunnerPanel(
                         title: 'Đơn đang chờ thanh toán',
                         children: [
                           Text(
-                            'Cự ly: ${pending!.distanceLabel}. Tiếp tục dùng thông tin và số tiền đã lưu trong đơn.',
+                            'Cự ly: ${pending!.distanceLabel}. Đây là thông tin đã lưu trong đơn và không thể sửa tại đây. Tiếp tục thanh toán sẽ dùng đơn này. Nếu cần đổi thông tin, hãy hủy đơn chưa thanh toán ở màn hình thanh toán rồi đăng ký lại.',
                           ),
-                          OutlinedButton(
-                            key: const Key('resume-payment'),
-                            onPressed: busy ? null : _continuePayment,
-                            child: const Text('Tiếp tục thanh toán'),
-                          ),
+                          if (step < 3)
+                            TextButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => _changeStep(step + 1),
+                              child: const Text('Xem tiếp thông tin đã lưu'),
+                            ),
                         ],
                       ),
                     _content(),

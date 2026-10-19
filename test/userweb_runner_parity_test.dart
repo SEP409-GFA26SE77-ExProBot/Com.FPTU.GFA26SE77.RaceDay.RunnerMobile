@@ -5,6 +5,8 @@ import 'package:runner_mobile/features/runner/data/registration_draft_store.dart
 import 'package:runner_mobile/features/runner/data/runner_mappers.dart';
 import 'package:runner_mobile/features/runner/domain/runner_models.dart';
 import 'package:runner_mobile/features/runner/domain/registration_form_rules.dart';
+import 'package:runner_mobile/features/runner/domain/registration_form_values.dart';
+import 'package:runner_mobile/features/runner/domain/registration_validation.dart';
 import 'package:runner_mobile/features/runner/presentation/controllers/payment_controller.dart';
 import 'package:runner_mobile/features/runner/presentation/screens/registration_form_screen.dart';
 import 'package:runner_mobile/features/runner/presentation/screens/registration_detail_screen.dart';
@@ -48,6 +50,21 @@ class HistoryWithoutQr extends FakeRunnerRepository {
   );
   @override
   Future<RunnerPayment> sync(String paymentId) async => withoutQr();
+}
+
+class PendingReadRepository extends FakeRunnerRepository {
+  bool failRead = false;
+  int detailReads = 0;
+  @override
+  Future<List<Registration>> registrations() async => [
+    Registration({...reg.data, 'fullName': 'Stale list name'}),
+  ];
+  @override
+  Future<Registration> registration(String id) async {
+    detailReads++;
+    if (failRead) throw Exception('offline');
+    return reg;
+  }
 }
 
 Future<void> tapVisible(WidgetTester tester, Finder finder) async {
@@ -115,6 +132,200 @@ Future<void> openForm(
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('prefill normalizes dates, gender sources and medical JSON safely', () {
+    expect(registrationBirthDate('2000-01-02T23:00:00-07:00'), '2000-01-02');
+    expect(registrationBirthDate(' 2000-01-02 '), '2000-01-02');
+    expect(registrationBirthDate('2000-02-30T00:00:00Z'), '');
+    expect(registrationBirthDate('not a date'), '');
+    expect(registrationBirthDate(null), '');
+    for (final value in [1, ' 1 ', 'Male', 'NAM', 'm']) {
+      expect(registrationGender(value), 'Male');
+    }
+    for (final value in [2, 'Female', 'nữ', 'nu', ' f ']) {
+      expect(registrationGender(value), 'Female');
+    }
+    for (final value in [0, 3, 'Other', 'khác', ' khac ']) {
+      expect(registrationGender(value), 'Other');
+    }
+    expect(registrationGender(0, fromProfile: true), isNull);
+    expect(registrationGender('Unknown', fromProfile: true), isNull);
+    expect(registrationMedicalCodes(['injury', ' none ']), ['injury', 'none']);
+    expect(registrationMedicalCodes('["injury","respiratory"]'), [
+      'injury',
+      'respiratory',
+    ]);
+    expect(registrationMedicalCodes('{broken'), isEmpty);
+    expect(registrationMedicalCodes('{"injury":true}'), isEmpty);
+    expect(registrationMedicalCodes(null), isEmpty);
+  });
+
+  test('birth date validation and picker share local inclusive age bounds', () {
+    final today = DateTime(2026, 10, 19, 0, 1);
+    expect(runnerBirthDateAtAge(today, 5), DateTime(2021, 10, 19));
+    expect(runnerBirthDateAtAge(today, 100), DateTime(1926, 10, 19));
+    expect(
+      validateRegistrationField('dateOfBirth', '2021-10-19', today: today),
+      isNull,
+    );
+    expect(
+      validateRegistrationField('dateOfBirth', '2021-10-20', today: today),
+      isNotNull,
+    );
+    expect(
+      validateRegistrationField('dateOfBirth', '1926-10-19', today: today),
+      isNull,
+    );
+    expect(
+      validateRegistrationField('dateOfBirth', '1926-10-18', today: today),
+      isNotNull,
+    );
+    final leapDay = DateTime(2028, 2, 29);
+    expect(runnerBirthDateAtAge(leapDay, 5), DateTime(2023, 2, 28));
+    expect(
+      validateRegistrationField('dateOfBirth', '2023-02-28', today: leapDay),
+      isNull,
+    );
+    expect(
+      validateRegistrationField('dateOfBirth', '2023-03-01', today: leapDay),
+      isNotNull,
+    );
+  });
+
+  testWidgets(
+    'shirt size can be cleared and BIB name is limited while typing',
+    (tester) async {
+      final repo = FakeRunnerRepository()..hasRegistration = false;
+      await const RegistrationDraftStore(
+        'u1',
+        'e1',
+      ).save({...validForm(), 'shirtSize': 'M'});
+      await openForm(tester, repo);
+      await tapVisible(tester, find.byKey(const Key('form-next')));
+      expect(find.textContaining('người giám hộ'), findsOneWidget);
+      await tapVisible(tester, find.byKey(const ValueKey('shirtSize-M')));
+      await tester.tap(find.text('Để trống / Chọn size').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('shirtSize-null')), findsOneWidget);
+      final bib = find.byKey(const Key('field-bibName'));
+      await tester.ensureVisible(bib);
+      await tester.enterText(bib, List.filled(41, 'A').join());
+      expect(tester.widget<TextFormField>(bib).controller!.text.length, 40);
+      await tapVisible(tester, find.byKey(const Key('form-next')));
+      final draft = await const RegistrationDraftStore('u1', 'e1').read();
+      expect(draft!['shirtSize'], isNull);
+      expect((draft['bibName'] as String).length, 40);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('IAM profile date and gender prefill without editing the date', (
+    tester,
+  ) async {
+    final repo = FakeRunnerRepository()..hasRegistration = false;
+    repo.profileData.addAll({
+      'dateOfBirth': '2000-01-02T00:00:00Z',
+      'gender': ' 2 ',
+    });
+    await openForm(tester, repo);
+    await tapVisible(tester, find.byKey(const Key('distance-d1')));
+    await tapVisible(tester, find.byKey(const Key('form-next')));
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('field-dateOfBirth')))
+          .controller!
+          .text,
+      '2000-01-02',
+    );
+    expect(find.byKey(const ValueKey('gender-Female')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'pending order uses fresh server data, offers only resume and never creates again',
+    (tester) async {
+      final repo = PendingReadRepository()
+        ..createdBody = {...validForm(), 'fullName': 'Saved server name'};
+      await const RegistrationDraftStore('u1', 'e1').save({
+        ...validForm(),
+        'fullName': 'Unsaved draft name',
+        'distanceId': 'd2',
+      });
+      await openForm(tester, repo);
+      expect(repo.detailReads, 1);
+      final name = tester.widget<TextFormField>(
+        find.byKey(const Key('field-fullName')),
+      );
+      expect(name.controller!.text, 'Saved server name');
+      expect(name.enabled, isFalse);
+      expect(find.byKey(const Key('form-next')), findsNothing);
+      expect(find.byKey(const Key('resume-payment')), findsOneWidget);
+      await tapVisible(tester, find.byKey(const Key('resume-payment')));
+      expect(find.byKey(const Key('payment-qr')), findsOneWidget);
+      expect(repo.createCalls, 0);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('field-fullName')), findsOneWidget);
+      expect(find.byKey(const Key('resume-payment')), findsOneWidget);
+      expect(repo.createCalls, 0);
+      expect(
+        (await const RegistrationDraftStore('u1', 'e1').read())!['fullName'],
+        'Unsaved draft name',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('failed pending lookup blocks new order and can retry', (
+    tester,
+  ) async {
+    final repo = PendingReadRepository()
+      ..failRead = true
+      ..createdBody = validForm();
+    await openForm(tester, repo);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const Key('form-next'))).onPressed,
+      isNull,
+    );
+    repo.failRead = false;
+    await tapVisible(tester, find.text('Thử lại'));
+    expect(find.byKey(const Key('resume-payment')), findsOneWidget);
+    expect(repo.createCalls, 0);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'resuming an order already paid opens the ticket without checkout',
+    (tester) async {
+      final repo = PendingReadRepository()..createdBody = validForm();
+      await openForm(tester, repo);
+      repo.status = 'confirmed';
+      repo.paymentStatus = 'paid';
+      await tapVisible(tester, find.byKey(const Key('resume-payment')));
+      expect(find.byType(RegistrationDetailScreen), findsOneWidget);
+      expect(repo.checkoutCalls, 0);
+      expect(repo.createCalls, 0);
+      expect(await const RegistrationDraftStore('u1', 'e1').read(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('resuming an order cancelled elsewhere resets to a fresh form', (
+    tester,
+  ) async {
+    final repo = PendingReadRepository()..createdBody = validForm();
+    await const RegistrationDraftStore('u1', 'e1').save(validForm());
+    await openForm(tester, repo);
+    repo.status = 'cancelled';
+    await tapVisible(tester, find.byKey(const Key('resume-payment')));
+    expect(find.byKey(const Key('distance-d1')), findsOneWidget);
+    expect(find.byKey(const Key('resume-payment')), findsNothing);
+    expect(find.byKey(const Key('form-next')), findsOneWidget);
+    expect(repo.checkoutCalls, 0);
+    expect(repo.createCalls, 0);
+    expect(await const RegistrationDraftStore('u1', 'e1').read(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   test(
     'four steps require the same personal, medical and payment inputs as UserWeb',
@@ -242,13 +453,22 @@ void main() {
     expect(find.byKey(const Key('payment-qr')), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.text('Runner Test'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('field-fullName')))
+          .controller!
+          .text,
+      'Runner Test',
+    );
+    expect(find.byKey(const Key('form-next')), findsNothing);
+    expect(repo.createCalls, 1);
     expect(find.byKey(const Key('resume-payment')), findsOneWidget);
     await tapVisible(tester, find.byKey(const Key('resume-payment')));
     await tapVisible(tester, find.text('Hủy thanh toán'));
     await tapVisible(tester, find.text('Hủy đơn'));
     expect(repo.cancelCalls, 1);
     expect(repo.mockCancelCalls, 1);
+    expect(repo.createCalls, 1);
     expect(find.byKey(const Key('distance-d1')), findsOneWidget);
     expect(find.byKey(const Key('resume-payment')), findsNothing);
     expect(await const RegistrationDraftStore('u1', 'e1').read(), isNull);
@@ -286,12 +506,22 @@ void main() {
     final repo = FakeRunnerRepository()
       ..status = 'rejected'
       ..paymentStatus = 'paid'
-      ..createdBody = validForm();
+      ..createdBody = {
+        ...validForm(),
+        'gender': 'khac',
+        'dateOfBirth': '2000-01-01T00:00:00Z',
+        'medicalCodes': '["none"]',
+      };
     await openForm(tester, repo, rejected: true);
     await tapVisible(tester, find.byKey(const Key('form-next')));
     await tapVisible(tester, find.byKey(const Key('form-next')));
     expect(repo.status, 'pending_approval');
     expect(repo.checkoutCalls, 0);
+    expect(repo.createCalls, 0);
+    expect(repo.resubmitCalls, 1);
+    expect(repo.createdBody!['gender'], 'Other');
+    expect(repo.createdBody!['dateOfBirth'], '2000-01-01');
+    expect(repo.createdBody!['medicalCodes'], ['none']);
     expect(find.byType(RegistrationDetailScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
