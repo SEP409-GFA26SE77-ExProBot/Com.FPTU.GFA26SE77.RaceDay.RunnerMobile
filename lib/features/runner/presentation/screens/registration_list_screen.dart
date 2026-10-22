@@ -17,27 +17,50 @@ class RegistrationListScreen extends StatefulWidget {
   State<RegistrationListScreen> createState() => _RegistrationListScreenState();
 }
 
-class _RegistrationListScreenState extends State<RegistrationListScreen> {
+class _RegistrationListScreenState extends State<RegistrationListScreen>
+    with WidgetsBindingObserver {
   List<Registration> registrations = [];
   String? error;
   String status = 'all';
   bool loading = true;
+  bool _refreshing = false, _hasLoaded = false;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        ModalRoute.of(context)?.isCurrent == true) {
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    if (_refreshing) return;
+    _refreshing = true;
     setState(() {
-      loading = true;
+      loading = !_hasLoaded;
       error = null;
     });
     try {
       registrations = await widget.repository.registrations();
+      _hasLoaded = true;
     } catch (e) {
-      error = e.toString();
+      error = _hasLoaded
+          ? 'Chưa cập nhật được danh sách vé. Đang hiển thị thông tin gần nhất; vui lòng kiểm tra kết nối và thử lại.'
+          : e.toString();
     } finally {
+      _refreshing = false;
       if (mounted) setState(() => loading = false);
     }
   }
@@ -59,7 +82,7 @@ class _RegistrationListScreenState extends State<RegistrationListScreen> {
   @override
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
-    if (error != null) {
+    if (error != null && !_hasLoaded) {
       return Center(child: RunnerNotice(error!, onRetry: _load));
     }
     final filtered = registrations
@@ -71,6 +94,7 @@ class _RegistrationListScreenState extends State<RegistrationListScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          if (error != null) RunnerNotice(error!, onRetry: _load),
           Text(
             'Đăng ký của tôi',
             style: Theme.of(
@@ -123,6 +147,10 @@ class _RegistrationListScreenState extends State<RegistrationListScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       StatusPill(r.statusLabel),
+                      if (r.status == 'confirmed') ...[
+                        const SizedBox(height: 8),
+                        CheckInStatus(checkedInAt: r.checkedInAt),
+                      ],
                       const SizedBox(height: 10),
                       Text(
                         r.eventName,

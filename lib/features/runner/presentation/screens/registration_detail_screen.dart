@@ -28,11 +28,12 @@ class RegistrationDetailScreen extends StatefulWidget {
 class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
     with WidgetsBindingObserver {
   Timer? _poll;
-  bool _polling = false, _active = true;
+  bool _polling = false, _active = true, _loadingDetails = false;
+  int _loadVersion = 0;
   Registration? registration;
   RaceDetail? race;
   RunnerPayment? payment;
-  String? error, extraError;
+  String? error, extraError, refreshError;
   bool loading = true, didAutoOpen = false;
   @override
   void initState() {
@@ -42,25 +43,38 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
     _poll = Timer.periodic(const Duration(seconds: 3), (_) => _refreshStatus());
   }
 
-  Future<void> _refreshStatus() async {
+  Future<void> _refreshStatus({bool force = false}) async {
     if (!mounted ||
         !_active ||
         loading ||
         _polling ||
         ModalRoute.of(context)?.isCurrent != true ||
-        !(registration?.status == 'pending_approval' ||
-            (registration?.status == 'confirmed' &&
-                !registration!.hasTicket))) {
+        (!force &&
+            !(registration?.status == 'pending_approval' ||
+                (registration?.status == 'confirmed' &&
+                    (!registration!.hasTicket ||
+                        registration!.checkedInAt == null))))) {
       return;
     }
     _polling = true;
+    final version = _loadVersion;
     try {
       final updated = await widget.repository.registration(
         widget.registrationId,
       );
-      if (mounted) setState(() => registration = updated);
+      if (mounted && version == _loadVersion) {
+        setState(() {
+          registration = updated;
+          refreshError = null;
+        });
+      }
     } catch (_) {
-      // A transient failure keeps the last known status and the manual refresh.
+      if (mounted && version == _loadVersion) {
+        setState(
+          () => refreshError =
+              'Chưa cập nhật được trạng thái. Đang hiển thị thông tin gần nhất; vui lòng kiểm tra kết nối và thử lại.',
+        );
+      }
     } finally {
       _polling = false;
     }
@@ -69,7 +83,7 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _active = state == AppLifecycleState.resumed;
-    if (_active) _refreshStatus();
+    if (_active) _refreshStatus(force: true);
   }
 
   @override
@@ -80,10 +94,14 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
   }
 
   Future<void> _load() async {
+    if (_loadingDetails) return;
+    _loadingDetails = true;
+    _loadVersion++;
     setState(() {
       loading = true;
       error = null;
       extraError = null;
+      refreshError = null;
     });
     try {
       registration = await widget.repository.registration(
@@ -107,8 +125,14 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
             'Chưa tải được thông tin thanh toán. Vui lòng kiểm tra lại trước khi thanh toán.';
       }
     } catch (e) {
-      error = e.toString();
+      if (registration == null) {
+        error = e.toString();
+      } else {
+        refreshError =
+            'Chưa cập nhật được trạng thái. Đang hiển thị thông tin gần nhất; vui lòng kiểm tra kết nối và thử lại.';
+      }
     }
+    _loadingDetails = false;
     if (!mounted) return;
     setState(() => loading = false);
     if (widget.openPayment &&
@@ -175,7 +199,7 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
         ['pending_payment', 'cancelled'].contains(r?.status);
     return Scaffold(
       appBar: AppBar(title: const Text('Chi tiết đăng ký / Vé')),
-      body: loading
+      body: loading && r == null
           ? const Center(child: CircularProgressIndicator())
           : error != null
           ? Center(child: RunnerNotice(error!, onRetry: _load))
@@ -190,6 +214,12 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(16),
                     children: [
+                      if (loading) const LinearProgressIndicator(),
+                      if (refreshError != null)
+                        RunnerNotice(
+                          refreshError!,
+                          onRetry: loading ? null : _load,
+                        ),
                       if (extraError != null)
                         RunnerNotice(extraError!, onRetry: _load),
                       RunnerPanel(
@@ -252,6 +282,14 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                         RunnerPanel(
                           title: 'Vé tham dự',
                           children: [
+                            CheckInStatus(checkedInAt: r.checkedInAt),
+                            if (r.checkedInAt == null) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Trạng thái tự cập nhật khi có kết nối. Nếu staff check-in khi mất mạng, kết quả sẽ xuất hiện sau khi staff đồng bộ thành công.',
+                              ),
+                            ],
+                            const SizedBox(height: 16),
                             if (r.hasTicket)
                               Center(
                                 child: Column(
@@ -279,8 +317,10 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                                       ),
                                     ),
                                     const SizedBox(height: 8),
-                                    const Text(
-                                      'Đưa mã QR này cho staff tại điểm check-in.',
+                                    Text(
+                                      r.checkedInAt == null
+                                          ? 'Đưa mã QR này cho staff tại điểm check-in.'
+                                          : 'Check-in đã được ghi nhận. Giữ vé để đối chiếu khi cần.',
                                       textAlign: TextAlign.center,
                                     ),
                                     infoLine('Mã vé', r.ticketCode),
@@ -291,8 +331,6 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                               const Text(
                                 'Vé chưa đủ dữ liệu BIB/QR. Vui lòng tải lại hoặc liên hệ BTC.',
                               ),
-                            if (r.checkedInAt != null)
-                              infoLine('Đã check-in', localTime(r.checkedInAt)),
                           ],
                         ),
                       const SizedBox(height: 16),
