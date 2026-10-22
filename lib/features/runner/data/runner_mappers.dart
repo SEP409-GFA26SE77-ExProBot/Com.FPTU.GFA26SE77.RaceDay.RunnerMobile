@@ -23,17 +23,25 @@ RaceDetail raceDetailFromJson(Json j, {DateTime? utcNow}) {
     packageExpiresAt: date('packageExpiresAtUtc'),
     distances: (j['distances'] as List? ?? []).map((raw) {
       final d = Map<String, dynamic>.from(raw);
+      // Current API uses basePrice; older servers returned price.
+      final rawPrice = d['basePrice'] ?? d['price'];
+      if (rawPrice is! num) {
+        throw const FormatException(
+          'Chưa có giá hợp lệ cho cự ly. Vui lòng thử lại hoặc liên hệ BTC.',
+        );
+      }
+      final price = rawPrice.toDouble();
       final preview = ticketPricePreview(
         j['ticketPricing'],
         d['name'] as String? ?? '',
-        (d['price'] as num).toDouble(),
+        price,
         now,
       );
       return RaceDistance(
         id: d['id'] as String,
         name: d['name'] as String? ?? '',
         km: (d['distanceKm'] as num).toDouble(),
-        price: (d['price'] as num).toDouble(),
+        price: price,
         estimatedPrice: preview.price,
         currency: d['currency'] as String? ?? 'VND',
         capacity: d['capacity'] as int? ?? 0,

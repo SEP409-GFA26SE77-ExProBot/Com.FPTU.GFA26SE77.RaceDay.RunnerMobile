@@ -53,6 +53,38 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test(
+    'current event detail reads basePrice without legacy price or route fields',
+    () {
+      final json = detail();
+      final distance =
+          (json['distances'] as List).single as Map<String, dynamic>;
+      distance.remove('price');
+      distance['basePrice'] = 1000000;
+      final race = raceDetailFromJson(json, utcNow: DateTime.utc(2026, 10, 15));
+      expect(race.distances.single.price, 1000000);
+      expect(race.distances.single.estimatedPrice, 800000);
+      expect(race.distances.single.km, 21.1);
+    },
+  );
+
+  test('basePrice takes precedence including a free distance', () {
+    final json = detail()..['ticketPricing'] = null;
+    final distance = (json['distances'] as List).single as Map<String, dynamic>;
+    distance['basePrice'] = 0;
+    final race = raceDetailFromJson(json);
+    expect(race.distances.single.price, 0);
+    expect(race.distances.single.estimatedPrice, 0);
+  });
+
+  test('missing prices are not silently displayed as free', () {
+    final json = detail();
+    final distance = (json['distances'] as List).single as Map<String, dynamic>;
+    distance.remove('price');
+    json['distances'] = [<String, dynamic>{...distance, 'basePrice': null}];
+    expect(() => raceDetailFromJson(json), throwsA(isA<FormatException>()));
+  });
+
+  test(
     'original detail DTO allows registration without any added backend fields',
     () {
       final race = raceDetailFromJson(

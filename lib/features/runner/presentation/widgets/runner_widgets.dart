@@ -110,6 +110,43 @@ class StatusPill extends StatelessWidget {
   );
 }
 
+class CheckInStatus extends StatelessWidget {
+  final DateTime? checkedInAt;
+  const CheckInStatus({super.key, required this.checkedInAt});
+
+  @override
+  Widget build(BuildContext context) {
+    final checked = checkedInAt != null;
+    final color = checked ? Colors.green.shade800 : Colors.orange.shade900;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: checked ? Colors.green.shade50 : Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(checked ? Icons.check_circle : Icons.schedule, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  checked ? 'Đã check-in' : 'Chưa check-in',
+                  style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                ),
+                if (checked)
+                  Text(localTime(checkedInAt), style: TextStyle(color: color)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class RaceImage extends StatelessWidget {
   final String? url;
   final double height;
