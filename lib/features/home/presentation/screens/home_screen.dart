@@ -9,6 +9,7 @@ import '../../../runner/data/runner_repository_impl.dart';
 import '../../../runner/domain/runner_repository.dart';
 import '../../../runner/presentation/screens/event_detail_screen.dart';
 import '../../../runner/presentation/screens/registration_list_screen.dart';
+import '../../../runner/presentation/screens/runner_profile_screen.dart';
 import '../../../runner/presentation/widgets/runner_widgets.dart';
 import '../controller/home_controller.dart';
 import '../models/home_filter_selection.dart';
@@ -271,6 +272,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             selectedIcon: Icon(Icons.confirmation_number),
             label: 'Đăng ký của tôi',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Hồ sơ',
+          ),
         ],
       ),
       body: Center(
@@ -278,6 +284,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           constraints: const BoxConstraints(maxWidth: 900),
           child: tab == 1
               ? RegistrationListScreen(
+                  user: widget.user,
+                  repository: repository,
+                )
+              : tab == 2
+              ? RunnerProfileScreen(
                   user: widget.user,
                   repository: repository,
                 )

@@ -86,6 +86,11 @@ class FakeRunnerRepository implements RunnerRepository {
   );
   @override
   Future<RunnerProfile> profile() async => RunnerProfile(profileData);
+  @override
+  Future<RunnerProfile> updateProfile(Json body) async {
+    profileData.addAll(body);
+    return RunnerProfile(profileData);
+  }
   bool hasRegistration = true;
   @override
   Future<List<Registration>> registrations() async =>
