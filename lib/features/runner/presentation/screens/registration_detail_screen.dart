@@ -323,7 +323,6 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                                           : 'Check-in đã được ghi nhận. Giữ vé để đối chiếu khi cần.',
                                       textAlign: TextAlign.center,
                                     ),
-                                    infoLine('Mã vé', r.ticketCode),
                                   ],
                                 ),
                               )
