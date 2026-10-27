@@ -4,6 +4,7 @@ import 'runner_models.dart';
 abstract class RunnerRepository {
   Future<RaceDetail> event(String id);
   Future<RunnerProfile> profile();
+  Future<RunnerProfile> updateProfile(Json body);
   Future<List<Registration>> registrations();
   Future<Registration> registration(String id);
   Future<Registration> createRegistration(String eventId, Json body);

@@ -22,6 +22,12 @@ class RunnerRepositoryImpl implements RunnerRepository {
   Future<RunnerProfile> profile() async =>
       RunnerProfile(Map<String, dynamic>.from(await _get('iam/me')));
   @override
+  Future<RunnerProfile> updateProfile(Json body) async => RunnerProfile(
+    Map<String, dynamic>.from(
+      await client.put('$base/api/v1/iam/me', token: token, body: body),
+    ),
+  );
+  @override
   Future<List<Registration>> registrations() async =>
       (await _get('event/registrations/mine') as List)
           .map((e) => Registration(Map<String, dynamic>.from(e)))
