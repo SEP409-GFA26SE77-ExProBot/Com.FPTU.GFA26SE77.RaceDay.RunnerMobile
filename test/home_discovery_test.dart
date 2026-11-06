@@ -509,6 +509,7 @@ void main() {
       );
       final c = HomeController(
         getEventsUseCase: GetEventsUseCase(MockEventsRepository(items)),
+        clock: () => DateTime(2026, 10, 31),
       );
       await c.fetchEvents();
 

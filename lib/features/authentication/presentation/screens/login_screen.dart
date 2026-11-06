@@ -458,18 +458,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           backgroundColor: Colors.white,
                           onPressed: () => _fillAccount('an.nguyen', 'MatKhau@123'),
                         ),
-                        ActionChip(
-                          avatar: const Icon(Icons.block, size: 16, color: Colors.red),
-                          label: const Text('admin (Admin - Test role error)'),
-                          backgroundColor: Colors.white,
-                          onPressed: () => _fillAccount('admin', 'MatKhau@123'),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.block, size: 16, color: Colors.orange),
-                          label: const Text('btc2 (BTC/Organizer - Test error)'),
-                          backgroundColor: Colors.white,
-                          onPressed: () => _fillAccount('btc2', 'MatKhau@123'),
-                        ),
                       ],
                     ),
                   ],

@@ -1,3 +1,5 @@
+import '../../../../core/utils/jwt_helper.dart';
+
 class UserEntity {
   final String? id;
   final String username;
@@ -15,10 +17,5 @@ class UserEntity {
     required this.token,
   });
 
-  bool get isRunner {
-    final lower = role.toLowerCase();
-    return (lower.contains('runner') || lower.contains('user')) &&
-        !lower.contains('admin') &&
-        !lower.contains('organizer');
-  }
+  bool get isRunner => JwtHelper.isRunnerRole(role);
 }
