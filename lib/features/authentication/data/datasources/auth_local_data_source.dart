@@ -41,7 +41,11 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
 
       final userJson = prefs.getString(_userKey);
       if (userJson != null) {
-        return UserModel.fromJson(jsonDecode(userJson));
+        return UserModel.fromToken(
+          token: token,
+          payload: payload,
+          fallbackUsername: UserModel.fromJson(jsonDecode(userJson)).username,
+        );
       }
 
       return UserModel.fromToken(token: token, payload: payload);
