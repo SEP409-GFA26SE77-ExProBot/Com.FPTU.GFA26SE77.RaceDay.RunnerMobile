@@ -14,10 +14,21 @@
   <main>
     <h1>RaceDay</h1>
     <h2>Quay lại ứng dụng để kiểm tra thanh toán</h2>
+    <p><a id="open-app" hidden>Mở ứng dụng RaceDay</a></p>
     <p>Bạn có thể đóng tab này, trở lại màn hình thanh toán và chọn <strong>Kiểm tra thanh toán</strong>.</p>
     <p>Nếu đã đóng ứng dụng, mở lại và chọn đăng ký trong <strong>Đăng ký của tôi</strong>.</p>
-    <p>Vé BIB/QR sẽ có sau khi Ban tổ chức duyệt hồ sơ.</p>
+    <p>Vé BIB/QR xuất hiện khi đăng ký được xác nhận. Hồ sơ cần duyệt sẽ chờ Ban tổ chức xử lý.</p>
     <a href="./">Mở RaceDay Web</a>
   </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('registrationId');
+    if (params.get('native') === '1' && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id || '')) {
+      const link = document.getElementById('open-app');
+      link.href = 'raceday://payment-return?registrationId=' + encodeURIComponent(id);
+      link.hidden = false;
+      window.location.replace(link.href);
+    }
+  </script>
 </body>
 </html>

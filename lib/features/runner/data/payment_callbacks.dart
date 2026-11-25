@@ -3,8 +3,44 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// HTTP callbacks are supplied by the client; WebAPI has no return/cancel page.
 class PaymentCallbacks {
+  static final pendingReturn = ValueNotifier<String?>(null);
   final String returnUrl, cancelUrl;
   const PaymentCallbacks(this.returnUrl, this.cancelUrl);
+
+  static String? registrationFromLink(Uri uri) {
+    if (uri.scheme != 'raceday' || uri.host != 'payment-return') return null;
+    final id = uri.queryParameters['registrationId'];
+    return id != null &&
+            RegExp(
+              r'^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$',
+            ).hasMatch(id)
+        ? id
+        : null;
+  }
+
+  static PaymentCallbacks forRegistration(
+    String apiBase,
+    String registrationId,
+  ) {
+    final callbacks = forApp(apiBase);
+    String addId(String url) {
+      final uri = Uri.parse(url);
+      return uri
+          .replace(
+            queryParameters: {
+              ...uri.queryParameters,
+              'registrationId': registrationId,
+              if (!kIsWeb) 'native': '1',
+            },
+          )
+          .toString();
+    }
+
+    return PaymentCallbacks(
+      addId(callbacks.returnUrl),
+      addId(callbacks.cancelUrl),
+    );
+  }
 
   static PaymentCallbacks forApp(String apiBase) {
     String? config(String key) {

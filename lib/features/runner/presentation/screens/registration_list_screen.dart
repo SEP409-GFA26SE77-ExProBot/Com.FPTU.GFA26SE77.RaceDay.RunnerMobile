@@ -86,7 +86,7 @@ class _RegistrationListScreenState extends State<RegistrationListScreen>
       return Center(child: RunnerNotice(error!, onRetry: _load));
     }
     final filtered = registrations
-        .where((r) => status == 'all' || r.status == status)
+        .where((r) => status == 'all' || r.displayStatus == status)
         .toList();
     return RefreshIndicator(
       onRefresh: _load,
@@ -116,6 +116,11 @@ class _RegistrationListScreenState extends State<RegistrationListScreen>
                       'confirmed',
                       'rejected',
                       'cancelled',
+                      'running',
+                      'finished',
+                      'dnf',
+                      'dns',
+                      'dq',
                     ]
                     .map(
                       (s) => DropdownMenuItem(

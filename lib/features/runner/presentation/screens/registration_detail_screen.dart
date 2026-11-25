@@ -7,6 +7,12 @@ import '../../domain/runner_repository.dart';
 import '../widgets/runner_widgets.dart';
 import 'payment_screen.dart';
 import 'registration_form_screen.dart';
+import 'photos_screen.dart';
+import 'results_screen.dart';
+import 'certificates_screen.dart';
+import 'complaints_screen.dart';
+import 'course_screen.dart';
+import '../../data/runner_activity_api.dart';
 
 class RegistrationDetailScreen extends StatefulWidget {
   final String registrationId;
@@ -278,7 +284,7 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                               : 'Giải hiện không nhận nộp lại hồ sơ. Vui lòng liên hệ BTC.',
                         ),
                       ],
-                      if (r.status == 'confirmed')
+                      if (['confirmed', 'finished'].contains(r.status))
                         RunnerPanel(
                           title: 'Vé tham dự',
                           children: [
@@ -326,6 +332,23 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                                   ],
                                 ),
                               )
+                            else if (r.status == 'finished' &&
+                                (r.bib?.isNotEmpty ?? false))
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'BIB ${r.bib}',
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Trạng thái thi đấu: ${r.statusLabel}. Xem kết quả bên dưới.',
+                                  ),
+                                ],
+                              )
                             else
                               const Text(
                                 'Vé chưa đủ dữ liệu BIB/QR. Vui lòng tải lại hoặc liên hệ BTC.',
@@ -333,6 +356,104 @@ class _RegistrationDetailScreenState extends State<RegistrationDetailScreen>
                           ],
                         ),
                       const SizedBox(height: 16),
+                      RunnerPanel(
+                        title: 'Tiện ích giải chạy',
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (r.bib?.isNotEmpty ?? false)
+                                OutlinedButton.icon(
+                                  icon: const Icon(
+                                    Icons.photo_library_outlined,
+                                  ),
+                                  label: const Text('Ảnh theo BIB'),
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PhotosScreen(
+                                        api: RunnerActivityApi(
+                                          token: widget.user.token,
+                                        ),
+                                        repository: widget.repository,
+                                        initial: r,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.emoji_events_outlined),
+                                label: const Text('Kết quả'),
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => LeaderboardScreen(
+                                      api: RunnerActivityApi(
+                                        token: widget.user.token,
+                                      ),
+                                      eventId: r.eventId,
+                                      eventName: r.eventName,
+                                      initialDistance: r.distanceId,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('Đường chạy'),
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CourseScreen(
+                                      api: RunnerActivityApi(
+                                        token: widget.user.token,
+                                      ),
+                                      eventId: r.eventId,
+                                      distanceId: r.distanceId,
+                                      title: r.distanceLabel,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (r.finished)
+                                OutlinedButton.icon(
+                                  icon: const Icon(
+                                    Icons.workspace_premium_outlined,
+                                  ),
+                                  label: const Text('Chứng nhận'),
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CertificateScreen(
+                                        api: RunnerActivityApi(
+                                          token: widget.user.token,
+                                        ),
+                                        registrationId: r.id,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              TextButton.icon(
+                                icon: const Icon(Icons.support_agent),
+                                label: const Text('Gửi khiếu nại'),
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CreateComplaintScreen(
+                                      api: RunnerActivityApi(
+                                        token: widget.user.token,
+                                      ),
+                                      repository: widget.repository,
+                                      initial: r,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                       RunnerPanel(
                         title: 'Hồ sơ runner',
                         children: [

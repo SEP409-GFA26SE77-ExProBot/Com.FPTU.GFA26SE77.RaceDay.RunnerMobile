@@ -80,7 +80,9 @@ void main() {
     final json = detail();
     final distance = (json['distances'] as List).single as Map<String, dynamic>;
     distance.remove('price');
-    json['distances'] = [<String, dynamic>{...distance, 'basePrice': null}];
+    json['distances'] = [
+      <String, dynamic>{...distance, 'basePrice': null},
+    ];
     expect(() => raceDetailFromJson(json), throwsA(isA<FormatException>()));
   });
 
@@ -267,7 +269,13 @@ void main() {
             case '/api/v1/payment/checkout':
               final body = jsonDecode(request.body) as Map;
               expect(body['registrationId'], 'r1');
-              expect(body['returnUrl'], endsWith('/api/v1/payment/status'));
+              final callback = Uri.parse(body['returnUrl'] as String);
+              expect(callback.path, '/api/v1/payment/status');
+              expect(
+                callback.queryParameters['registrationId'],
+                body['registrationId'],
+              );
+              expect(callback.queryParameters['native'], '1');
               expect(body['cancelUrl'], body['returnUrl']);
               expect(body.containsKey('amount'), isFalse);
               response = payment;

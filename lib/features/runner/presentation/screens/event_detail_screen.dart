@@ -7,6 +7,9 @@ import '../../domain/runner_repository.dart';
 import '../widgets/runner_widgets.dart';
 import 'registration_form_screen.dart';
 import 'registration_detail_screen.dart';
+import 'results_screen.dart';
+import 'course_screen.dart';
+import '../../data/runner_activity_api.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final String eventId;
@@ -314,6 +317,63 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                             style: TextStyle(fontSize: 12),
                           ),
                         ],
+                      ),
+                      RunnerPanel(
+                        title: 'Đường chạy và kết quả',
+                        children: r.distances
+                            .map(
+                              (d) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('${d.name} · ${d.km} km'),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          icon: const Icon(Icons.map_outlined),
+                                          label: const Text('Bản đồ'),
+                                          onPressed: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => CourseScreen(
+                                                api: RunnerActivityApi(
+                                                  token: widget.user.token,
+                                                ),
+                                                eventId: r.id,
+                                                distanceId: d.id,
+                                                title: d.name,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        TextButton.icon(
+                                          icon: const Icon(
+                                            Icons.emoji_events_outlined,
+                                          ),
+                                          label: const Text('Bảng xếp hạng'),
+                                          onPressed: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => LeaderboardScreen(
+                                                api: RunnerActivityApi(
+                                                  token: widget.user.token,
+                                                ),
+                                                eventId: r.id,
+                                                eventName: r.name,
+                                                initialDistance: d.id,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
                       ),
                       RunnerPanel(
                         title: 'Ban tổ chức',
