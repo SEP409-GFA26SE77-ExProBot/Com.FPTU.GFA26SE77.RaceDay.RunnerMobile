@@ -93,9 +93,20 @@ class Registration {
       DateTime.tryParse(data['checkedInAtUtc']?.toString() ?? '');
   String? get qrJson =>
       data['qrPayload'] is Map ? jsonEncode(data['qrPayload']) : null;
+  String? get raceStatus => data['raceStatus'] as String?;
+  String get displayStatus =>
+      ['confirmed', 'finished'].contains(status) &&
+          raceStatus != null &&
+          raceStatus != 'not_started'
+      ? raceStatus!
+      : status;
+  bool get finished =>
+      status == 'finished' && (raceStatus == null || raceStatus == 'finished');
   bool get hasTicket =>
-      status == 'confirmed' && (bib?.isNotEmpty ?? false) && qrJson != null;
-  String get statusLabel => registrationStatusLabel(status);
+      ['confirmed', 'finished'].contains(status) &&
+      (bib?.isNotEmpty ?? false) &&
+      qrJson != null;
+  String get statusLabel => registrationStatusLabel(displayStatus);
 }
 
 String registrationStatusLabel(String status) => switch (status) {
@@ -104,6 +115,11 @@ String registrationStatusLabel(String status) => switch (status) {
   'confirmed' => 'Đã xác nhận',
   'rejected' => 'Hồ sơ bị từ chối',
   'cancelled' => 'Đã hủy',
+  'finished' => 'Đã hoàn thành',
+  'running' => 'Đang thi đấu',
+  'dnf' => 'Không hoàn thành (DNF)',
+  'dns' => 'Không xuất phát (DNS)',
+  'dq' => 'Bị loại (DQ)',
   _ => 'Đang cập nhật',
 };
 

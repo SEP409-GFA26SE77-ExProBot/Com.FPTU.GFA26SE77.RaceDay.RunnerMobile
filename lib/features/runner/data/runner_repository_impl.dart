@@ -81,8 +81,14 @@ class RunnerRepositoryImpl implements RunnerRepository {
         Map<String, dynamic>.from(
           await _post('payment/checkout', {
             'registrationId': registrationId,
-            'returnUrl': PaymentCallbacks.forApp(base).returnUrl,
-            'cancelUrl': PaymentCallbacks.forApp(base).cancelUrl,
+            'returnUrl': PaymentCallbacks.forRegistration(
+              base,
+              registrationId,
+            ).returnUrl,
+            'cancelUrl': PaymentCallbacks.forRegistration(
+              base,
+              registrationId,
+            ).cancelUrl,
           }),
         ),
       );

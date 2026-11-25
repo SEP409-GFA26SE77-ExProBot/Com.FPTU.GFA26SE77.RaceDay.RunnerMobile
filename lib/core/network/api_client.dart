@@ -20,6 +20,39 @@ class ApiClient {
   Future<dynamic> put(String url, {dynamic body, String? token}) =>
       _request('PUT', url, token: token, body: body);
 
+  Future<Uint8List> imageBytes(String url, {required String token}) async {
+    try {
+      final response = await _client
+          .get(Uri.parse(url), headers: _headers(token))
+          .timeout(const Duration(seconds: 120));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        _handleResponse(response, authenticated: true);
+      }
+      final type = response.headers['content-type'] ?? '';
+      final bytes = response.bodyBytes;
+      final knownImage =
+          bytes.length >= 4 &&
+          ((bytes[0] == 0xff && bytes[1] == 0xd8) ||
+              (bytes[0] == 137 &&
+                  bytes[1] == 80 &&
+                  bytes[2] == 78 &&
+                  bytes[3] == 71) ||
+              (bytes[0] == 71 && bytes[1] == 73 && bytes[2] == 70) ||
+              (bytes.length >= 12 &&
+                  String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP'));
+      if (bytes.isEmpty ||
+          (!type.startsWith('image/') &&
+              !(type.startsWith('application/octet-stream') && knownImage))) {
+        throw AppException('Không nhận được file ảnh hợp lệ.');
+      }
+      return bytes;
+    } on AppException {
+      rethrow;
+    } catch (_) {
+      throw NetworkException('Không tải được ảnh. Vui lòng thử lại.');
+    }
+  }
+
   Future<dynamic> _request(
     String method,
     String url, {
@@ -42,7 +75,22 @@ class ApiClient {
     final request = http.MultipartRequest('POST', Uri.parse(url))
       ..headers.addAll(_headers(token))
       ..files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename,
+          contentType: http.MediaType.parse(switch (filename
+              .split('.')
+              .last
+              .toLowerCase()) {
+            'jpg' || 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'pdf' => 'application/pdf',
+            _ => 'application/octet-stream',
+          }),
+        ),
       );
     return _send(request, token, const Duration(seconds: 90));
   }

@@ -6,10 +6,13 @@ import '../../../authentication/domain/entities/user_entity.dart';
 import '../../../authentication/presentation/controller/auth_controller.dart';
 import '../../../authentication/presentation/screens/login_screen.dart';
 import '../../../runner/data/runner_repository_impl.dart';
+import '../../../runner/data/payment_callbacks.dart';
+import '../../../runner/presentation/screens/registration_detail_screen.dart';
 import '../../../runner/domain/runner_repository.dart';
 import '../../../runner/presentation/screens/event_detail_screen.dart';
 import '../../../runner/presentation/screens/registration_list_screen.dart';
 import '../../../runner/presentation/screens/runner_profile_screen.dart';
+import '../../../runner/presentation/screens/runner_activity_screen.dart';
 import '../../../runner/presentation/widgets/runner_widgets.dart';
 import '../controller/home_controller.dart';
 import '../models/home_filter_selection.dart';
@@ -47,6 +50,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         widget.repository ?? RunnerRepositoryImpl(token: widget.user.token);
     controller.addListener(_changed);
     controller.fetchEvents();
+    PaymentCallbacks.pendingReturn.addListener(_paymentReturn);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _paymentReturn());
+  }
+
+  void _paymentReturn() {
+    if (!mounted) return;
+    final id = PaymentCallbacks.pendingReturn.value;
+    if (id == null) return;
+    PaymentCallbacks.pendingReturn.value = null;
+    // An open checkout refreshes against WebAPI when the app resumes.
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RegistrationDetailScreen(
+          registrationId: id,
+          user: widget.user,
+          repository: repository,
+        ),
+      ),
+    );
   }
 
   void _changed() {
@@ -56,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    PaymentCallbacks.pendingReturn.removeListener(_paymentReturn);
     controller.removeListener(_changed);
     _scrollController.dispose();
     controller.dispose();
@@ -273,6 +298,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             label: 'Đăng ký của tôi',
           ),
           NavigationDestination(
+            icon: Icon(Icons.grid_view_outlined),
+            selectedIcon: Icon(Icons.grid_view_rounded),
+            label: 'Hoạt động',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Hồ sơ',
@@ -288,10 +318,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   repository: repository,
                 )
               : tab == 2
-              ? RunnerProfileScreen(
-                  user: widget.user,
-                  repository: repository,
-                )
+              ? RunnerActivityScreen(user: widget.user, repository: repository)
+              : tab == 3
+              ? RunnerProfileScreen(user: widget.user, repository: repository)
               : controller.isInitialLoading
               ? const Center(child: CircularProgressIndicator())
               : controller.error != null && controller.allEvents.isEmpty
@@ -382,7 +411,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             : ListView.separated(
                                 controller: _scrollController,
                                 physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+                                padding: const EdgeInsets.fromLTRB(
+                                  14,
+                                  4,
+                                  14,
+                                  8,
+                                ),
                                 itemCount: controller.pagedEvents.length,
                                 separatorBuilder: (_, _) =>
                                     const SizedBox(height: 8),

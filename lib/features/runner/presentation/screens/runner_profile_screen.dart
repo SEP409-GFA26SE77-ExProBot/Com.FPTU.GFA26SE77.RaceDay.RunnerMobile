@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../authentication/domain/entities/user_entity.dart';
 import '../../domain/runner_models.dart';
 import '../../domain/runner_repository.dart';
+import '../../data/runner_activity_api.dart';
+import '../widgets/activity_widgets.dart';
+import '../../../authentication/presentation/screens/account_screen.dart';
 
 class RunnerProfileScreen extends StatefulWidget {
   final UserEntity user;
@@ -30,6 +34,7 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
   int gender = 0;
   bool loading = true;
   bool saving = false;
+  bool uploadingAvatar = false;
   String? error;
   String? success;
 
@@ -96,8 +101,8 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
     final today = DateTime.now();
     final firstDate = DateTime(today.year - 100, today.month, today.day);
     final lastDate = DateTime(today.year - 5, today.month, today.day);
-    final currentDate = dateOfBirth ??
-        DateTime(today.year - 25, today.month, today.day);
+    final currentDate =
+        dateOfBirth ?? DateTime(today.year - 25, today.month, today.day);
     final initialDate = currentDate.isBefore(firstDate)
         ? firstDate
         : currentDate.isAfter(lastDate)
@@ -165,6 +170,54 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
         error = _message(e);
       });
     }
+  }
+
+  Future<void> _avatar() async {
+    setState(() {
+      uploadingAvatar = true;
+      error = null;
+    });
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+      );
+      if (file == null) return;
+      final length = await file.length();
+      if (length != null && length > 2 * 1024 * 1024) {
+        throw Exception('Ảnh đại diện tối đa 2MB.');
+      }
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024) {
+        throw Exception('Ảnh đại diện phải có dữ liệu và tối đa 2MB.');
+      }
+      final updated = await RunnerActivityApi(
+        token: widget.user.token,
+      ).uploadAvatar(file.name, bytes);
+      if (mounted) {
+        setState(() {
+          profile = updated;
+          success = 'Đã cập nhật ảnh đại diện.';
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = _message(e));
+    } finally {
+      if (mounted) setState(() => uploadingAvatar = false);
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AccountScreen(
+          action: AccountAction.change,
+          token: widget.user.token,
+        ),
+      ),
+    );
+    if (mounted && result != null) activityMessage(context, result);
   }
 
   String _dateLabel(DateTime? value) {
@@ -235,10 +288,11 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
                   children: [
                     Text(
                       'Hồ sơ runner',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
                     ),
                     const SizedBox(height: 4),
                     const Text(
@@ -262,6 +316,38 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
             email: email,
             completedFields: _completedFields,
             progress: progress,
+          ),
+          const SizedBox(height: 12),
+          if (mediaUrl(fields['avatarUrl'] as String?).isNotEmpty)
+            Center(
+              child: ClipOval(
+                child: SizedBox(
+                  width: 88,
+                  height: 88,
+                  child: ActivityImage(
+                    fields['avatarUrl'] as String?,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          Wrap(
+            spacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: uploadingAvatar || saving ? null : _avatar,
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: Text(
+                  uploadingAvatar ? 'Đang tải ảnh…' : 'Đổi ảnh đại diện',
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _changePassword,
+                icon: const Icon(Icons.lock_outline),
+                label: const Text('Đổi mật khẩu'),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
           if (error != null) ...[
@@ -315,8 +401,9 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
                       validator: (value) {
                         final phone = value?.trim() ?? '';
                         if (phone.isEmpty) return null;
-                        if (!RegExp(r'^(0|\+84)(3|5|7|8|9)\d{8}$')
-                            .hasMatch(phone)) {
+                        if (!RegExp(
+                          r'^(0|\+84)(3|5|7|8|9)\d{8}$',
+                        ).hasMatch(phone)) {
                           return 'Nhập số di động Việt Nam hợp lệ.';
                         }
                         return null;
@@ -381,8 +468,9 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
                         final id = value?.trim() ?? '';
                         if (id.isEmpty ||
                             RegExp(r'^\d{9}$|^\d{12}$').hasMatch(id) ||
-                            RegExp(r'^[A-Za-z][A-Za-z0-9]{5,11}$')
-                                .hasMatch(id)) {
+                            RegExp(
+                              r'^[A-Za-z][A-Za-z0-9]{5,11}$',
+                            ).hasMatch(id)) {
                           return null;
                         }
                         return 'Nhập CMND 9 số, CCCD 12 số hoặc hộ chiếu hợp lệ.';
@@ -399,7 +487,9 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
                   children: [
                     _ReadOnlyField(
                       label: 'Tên đăng nhập',
-                      value: fields['username']?.toString() ?? widget.user.username,
+                      value:
+                          fields['username']?.toString() ??
+                          widget.user.username,
                       icon: Icons.alternate_email,
                     ),
                     const SizedBox(height: 12),
@@ -415,7 +505,7 @@ class _RunnerProfileScreenState extends State<RunnerProfileScreen> {
                   width: double.infinity,
                   height: 54,
                   child: FilledButton.icon(
-                    onPressed: saving ? null : _save,
+                    onPressed: saving || uploadingAvatar ? null : _save,
                     icon: saving
                         ? const SizedBox.square(
                             dimension: 18,

@@ -4,6 +4,7 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/brand_logo.dart';
 import '../../../../shared/widgets/custom_button.dart';
 import '../controller/auth_controller.dart';
+import 'account_screen.dart';
 import '../widgets/login_error_banner.dart';
 import '../../../home/presentation/screens/home_screen.dart';
 
@@ -53,6 +54,18 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (_) => HomeScreen(user: _controller.currentUser!),
         ),
       );
+    }
+  }
+
+  Future<void> _openAccount(AccountAction action) async {
+    final message = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => AccountScreen(action: action)),
+    );
+    if (mounted && message != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -131,8 +144,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   fillColor: hasError
                       ? const Color(0xFFFFFBFB)
                       : AppColors.surfaceMuted,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
@@ -200,8 +215,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   fillColor: hasError
                       ? const Color(0xFFFFFBFB)
                       : AppColors.surfaceMuted,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
@@ -236,14 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Vui lòng liên hệ BTC hoặc đặt lại mật khẩu qua email.'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
+                  onPressed: () => _openAccount(AccountAction.forgot),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
@@ -271,10 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Row(
                 children: [
                   const Expanded(
-                    child: Divider(
-                      color: AppColors.border,
-                      thickness: 1,
-                    ),
+                    child: Divider(color: AppColors.border, thickness: 1),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -287,10 +294,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const Expanded(
-                    child: Divider(
-                      color: AppColors.border,
-                      thickness: 1,
-                    ),
+                    child: Divider(color: AppColors.border, thickness: 1),
                   ),
                 ],
               ),
@@ -304,7 +308,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Tính năng Google OAuth đang được cập nhật.'),
+                        content: Text(
+                          'Tính năng Google OAuth đang được cập nhật.',
+                        ),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -347,80 +353,14 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 32),
 
-              // Footer: "Chưa có tài khoản? Liên hệ ban tổ chức"
-              Center(
-                child: RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textMuted,
-                    ),
-                    children: [
-                      const TextSpan(text: AppStrings.noAccount),
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.middle,
-                        child: GestureDetector(
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              shape: const RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.vertical(top: Radius.circular(20)),
-                              ),
-                              builder: (ctx) => Padding(
-                                padding: const EdgeInsets.all(24.0),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Liên hệ Ban Tổ Chức',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    const Text(
-                                      'Email hỗ trợ: support@raceday.vn\nHotline: 1900 6868\nThời gian làm việc: 8:00 - 18:00 các ngày trong tuần.',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        height: 1.5,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: ElevatedButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: AppColors.primary,
-                                        ),
-                                        child: const Text('Đóng',
-                                            style: TextStyle(color: Colors.white)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            AppStrings.contactOrganizer,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              TextButton(
+                onPressed: () => _openAccount(AccountAction.register),
+                child: const Text('Đăng ký tài khoản'),
               ),
-
+              TextButton(
+                onPressed: () => _openAccount(AccountAction.verify),
+                child: const Text('Xác thực email tài khoản'),
+              ),
               const SizedBox(height: 36),
 
               // Test credentials panel
@@ -435,7 +375,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.vpn_key_rounded, size: 16, color: AppColors.textMuted),
+                        Icon(
+                          Icons.vpn_key_rounded,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
                         SizedBox(width: 6),
                         Text(
                           'Tài khoản kiểm thử nhanh:',
@@ -453,10 +397,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       runSpacing: 6,
                       children: [
                         ActionChip(
-                          avatar: const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                          avatar: const Icon(
+                            Icons.check_circle,
+                            size: 16,
+                            color: Colors.green,
+                          ),
                           label: const Text('an.nguyen (VĐV/Runner)'),
                           backgroundColor: Colors.white,
-                          onPressed: () => _fillAccount('an.nguyen', 'MatKhau@123'),
+                          onPressed: () =>
+                              _fillAccount('an.nguyen', 'MatKhau@123'),
                         ),
                       ],
                     ),
